@@ -47,6 +47,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 
 private sealed interface MedState {
     data object Browse : MedState
@@ -116,7 +118,7 @@ private fun Confirm(s: MedState.Confirm, onConfirm: (MedicationReferenceEntity, 
     val needStrength = med?.strengths?.isNotEmpty() == true
     val needForm = med?.forms?.isNotEmpty() == true
     Column(modifier.verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(stringResource(R.string.med_confirm_title), style = MaterialTheme.typography.headlineSmall)
+        Text(stringResource(R.string.med_confirm_title), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
         Text(stringResource(R.string.med_confirm_body), color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(stringResource(R.string.med_confirm_name), fontWeight = FontWeight.Bold)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -153,7 +155,7 @@ private fun Detail(db: PatnubDatabase, selfId: String, s: MedState.Detail, onBac
     val mine = MedicineMatcher.prescriptionsFor(m, records)
     Column(modifier.verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedButton(onClick = onBack) { Text(stringResource(R.string.med_back)) }
-        Text(m.name + listOfNotNull(s.strength, s.form).joinToString(" · ", prefix = if (s.strength != null) " · " else ""), style = MaterialTheme.typography.headlineSmall)
+        Text(m.name + listOfNotNull(s.strength, s.form).joinToString(" · ", prefix = if (s.strength != null) " · " else ""), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
         Text(m.drugClass, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
         mine.firstOrNull()?.let { (record, p) ->

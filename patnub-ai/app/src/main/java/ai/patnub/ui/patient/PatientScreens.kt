@@ -7,7 +7,6 @@ import ai.patnub.transfer.RecordImporter
 import ai.patnub.ui.components.PlaceholderPane
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +18,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -29,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
 /** The five Patient tabs. Scan sits in the middle as the raised action button. */
@@ -57,12 +59,13 @@ fun PatientNavigationBar(selected: PatientTab, onSelect: (PatientTab) -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .height(72.dp),
+                    .height(72.dp)
+                    .selectableGroup(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 PatientTab.entries.forEach { tab ->
                     if (tab == PatientTab.Scan) {
-                        ScanTabButton(tab, Modifier.weight(1f)) { onSelect(tab) }
+                        ScanTabButton(tab, selected == tab, Modifier.weight(1f)) { onSelect(tab) }
                     } else {
                         PatientTabItem(tab, selected == tab, Modifier.weight(1f)) { onSelect(tab) }
                     }
@@ -72,23 +75,25 @@ fun PatientNavigationBar(selected: PatientTab, onSelect: (PatientTab) -> Unit) {
     }
 }
 
+// Tabs are `selectable` with Role.Tab so TalkBack says e.g. "Selected, Records, Tab, 2 of 5".
 @Composable
 private fun PatientTabItem(tab: PatientTab, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
     Column(
         modifier = modifier
             .fillMaxHeight()
-            .clickable(onClick = onClick),
+            .selectable(selected = selected, onClick = onClick, role = Role.Tab),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
+        // The label below names the tab; the icon would only repeat it.
         Icon(painterResource(tab.icon), contentDescription = null, tint = tint, modifier = Modifier.size(24.dp))
         Text(stringResource(tab.label), color = tint, style = MaterialTheme.typography.labelSmall)
     }
 }
 
 @Composable
-private fun ScanTabButton(tab: PatientTab, modifier: Modifier, onClick: () -> Unit) {
+private fun ScanTabButton(tab: PatientTab, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     Box(modifier.fillMaxHeight(), contentAlignment = Alignment.Center) {
         Surface(
             shape = CircleShape,
@@ -97,7 +102,7 @@ private fun ScanTabButton(tab: PatientTab, modifier: Modifier, onClick: () -> Un
             modifier = Modifier
                 .size(56.dp)
                 .offset(y = (-4).dp)
-                .clickable(onClick = onClick),
+                .selectable(selected = selected, onClick = onClick, role = Role.Tab),
         ) {
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxHeight()) {
                 Icon(

@@ -13,6 +13,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 
 /** A titled white card. Used for detail sections so long content reads in chunks. */
 @Composable
@@ -25,7 +28,7 @@ fun SectionCard(
 ) {
     Card(modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = container)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(title, style = MaterialTheme.typography.labelLarge, color = titleColor)
+            Text(title, style = MaterialTheme.typography.labelLarge, color = titleColor, modifier = Modifier.semantics { heading() })
             content()
         }
     }
@@ -36,7 +39,7 @@ fun SectionCard(
 fun BulletList(lines: List<String>, color: Color = MaterialTheme.colorScheme.onSurface) {
     lines.forEach { line ->
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("•", color = color)
+            Text("•", color = color, modifier = Modifier.clearAndSetSemantics {}) // decorative
             Text(line, color = color, modifier = Modifier.weight(1f))
         }
     }

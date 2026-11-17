@@ -47,6 +47,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 
 private sealed interface ScanState {
     data object Idle : ScanState
@@ -112,7 +114,7 @@ fun ScanScreen(checkInCode: String, importer: RecordImporter, onSaved: () -> Uni
             is ScanState.Preview -> {
                 val r = s.opened.record
                 val staff = s.opened.staff
-                Text(stringResource(R.string.scan_preview_title), style = MaterialTheme.typography.headlineSmall)
+                Text(stringResource(R.string.scan_preview_title), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
                 Text(
                     if (s.replacesVersion != null) stringResource(R.string.scan_preview_replaces, s.replacesVersion) else stringResource(R.string.scan_preview_body),
                     color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
@@ -157,7 +159,7 @@ fun ScanScreen(checkInCode: String, importer: RecordImporter, onSaved: () -> Uni
             else -> {
                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)) {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(stringResource(R.string.scan_record_title), style = MaterialTheme.typography.titleLarge)
+                        Text(stringResource(R.string.scan_record_title), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
                         Text(stringResource(R.string.scan_record_body), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Button(onClick = { state = ScanState.Scanning }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                             Text(stringResource(R.string.scan_start))
@@ -166,7 +168,7 @@ fun ScanScreen(checkInCode: String, importer: RecordImporter, onSaved: () -> Uni
                 }
                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)) {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(stringResource(R.string.checkin_title), style = MaterialTheme.typography.titleLarge, modifier = Modifier.fillMaxWidth())
+                        Text(stringResource(R.string.checkin_title), style = MaterialTheme.typography.titleLarge, modifier = Modifier.fillMaxWidth().semantics { heading() })
                         Text(stringResource(R.string.checkin_body), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth())
                         BrightScreenWhileVisible()
                         QrCode(

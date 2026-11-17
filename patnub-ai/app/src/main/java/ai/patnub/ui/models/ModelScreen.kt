@@ -12,7 +12,9 @@ import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -44,6 +46,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -84,7 +89,10 @@ fun ModelScreen(
         modifier.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(stringResource(R.string.models_title), style = MaterialTheme.typography.headlineSmall)
+        Text(
+            stringResource(R.string.models_title), style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.semantics { heading() },
+        )
         Text(
             stringResource(R.string.models_phone, gb(store.totalRamBytes), recommended.title),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -93,21 +101,33 @@ fun ModelScreen(
             Text(stringResource(R.string.models_cpu_unsupported), color = MaterialTheme.colorScheme.error)
         }
 
-        ModelCatalog.packages.forEach { p ->
-            PackageRow(
-                p = p,
-                selected = p.id == selected.id,
-                recommended = p.id == recommended.id,
-                tooHeavy = p.tier > ModelCatalog.tierFor(store.totalRamBytes),
-                installed = states[p.id] == InstallState.Ready,
-                onClick = { if (!busy) { selected = p; store.selected = p } },
-            )
+        // A radio group: TalkBack reads "1 of 3" and keeps the choices together.
+        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            ModelCatalog.packages.forEach { p ->
+                PackageRow(
+                    p = p,
+                    selected = p.id == selected.id,
+                    recommended = p.id == recommended.id,
+                    tooHeavy = p.tier > ModelCatalog.tierFor(store.totalRamBytes),
+                    installed = states[p.id] == InstallState.Ready,
+                    onClick = { if (!busy) { selected = p; store.selected = p } },
+                )
+            }
         }
 
         SectionCard(stringResource(R.string.models_install)) {
             Text(stringResource(R.string.models_size, gb(selected.totalBytes), gb(store.freeBytes())))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = agreed || state == InstallState.Ready, onCheckedChange = { agreed = it }, enabled = state != InstallState.Ready)
+            // One toggle with the sentence as its label; a bare Checkbox would be read as just "Checkbox".
+            Row(
+                Modifier.toggleable(
+                    value = agreed || state == InstallState.Ready,
+                    enabled = state != InstallState.Ready,
+                    role = Role.Checkbox,
+                    onValueChange = { agreed = it },
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = agreed || state == InstallState.Ready, onCheckedChange = null, enabled = state != InstallState.Ready)
                 Text(stringResource(R.string.models_agree, selected.license), modifier = Modifier.weight(1f))
             }
             TextButton(onClick = { uri.openUri(selected.licenseUrl) }) { Text(stringResource(R.string.models_read_license)) }
@@ -159,12 +179,13 @@ fun ModelScreen(
 @Composable
 private fun PackageRow(p: ModelPackage, selected: Boolean, recommended: Boolean, tooHeavy: Boolean, installed: Boolean, onClick: () -> Unit) {
     Card(
-        Modifier.fillMaxWidth().clickable(onClick = onClick),
+        // The whole card is one radio button, read with its title, tags and summary.
+        Modifier.fillMaxWidth().selectable(selected = selected, onClick = onClick, role = Role.RadioButton),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
         border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
-            RadioButton(selected = selected, onClick = onClick)
+            RadioButton(selected = selected, onClick = null)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(p.title, style = MaterialTheme.typography.titleMedium)
                 val tags = listOfNotNull(

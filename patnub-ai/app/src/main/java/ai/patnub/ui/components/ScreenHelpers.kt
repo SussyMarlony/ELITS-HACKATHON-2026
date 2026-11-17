@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.clearAndSetSemantics
 
 private tailrec fun Context.activity(): Activity? = when (this) {
     is Activity -> this
@@ -55,7 +56,8 @@ fun View.confirmHaptic() {
 /** A symbol in a soft tinted circle, for result screens. */
 @Composable
 fun ResultIcon(symbol: String, tint: Color, modifier: Modifier = Modifier) {
-    Box(modifier.size(72.dp).background(tint.copy(alpha = 0.12f), CircleShape), contentAlignment = Alignment.Center) {
+    // Decorative: the title next to it says what happened (TalkBack would read "check mark").
+    Box(modifier.size(72.dp).background(tint.copy(alpha = 0.12f), CircleShape).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
         Text(symbol, color = tint, fontSize = 32.sp, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineMedium)
     }
 }

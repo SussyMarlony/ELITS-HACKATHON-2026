@@ -51,6 +51,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SuggestionChip
 import ai.patnub.assistant.Turn
@@ -75,6 +76,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -238,7 +246,11 @@ fun AssistantScreen(
             InputChip(
                 selected = true, onClick = { photo = null },
                 label = { Text(stringResource(R.string.assistant_photo_attached)) },
-                trailingIcon = { Text("×") },
+                // Read as "Remove photo", not "multiplication sign".
+                trailingIcon = {
+                    val remove = stringResource(R.string.assistant_remove_photo)
+                    Text("×", Modifier.semantics { contentDescription = remove })
+                },
                 modifier = Modifier.padding(start = 12.dp),
             )
         }
@@ -257,9 +269,11 @@ fun AssistantScreen(
                 if (assistant.supportsImages) {
                     Box(
                         Modifier
+                            // 48 dp touch target around the 36 dp circle (Material minimum).
+                            .minimumInteractiveComponentSize()
                             .size(36.dp)
                             .clip(CircleShape)
-                            .clickable {
+                            .clickable(role = Role.Button) {
                                 pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                             },
                         contentAlignment = Alignment.Center,
@@ -331,8 +345,11 @@ private fun CircleAction(
         shape = CircleShape,
         color = background,
         modifier = Modifier
+            // 48 dp touch target around the 36 dp circle (Material minimum).
+            .minimumInteractiveComponentSize()
             .size(36.dp)
-            .clickable(enabled = enabled, onClick = onClick),
+            .clip(CircleShape)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
             Icon(painterResource(icon), contentDescription = description, tint = tint, modifier = Modifier.size(20.dp))
@@ -347,7 +364,11 @@ private fun AnswerBubble(item: ChatItem.Answer) {
     when (val r = item.reply) {
         is Reply.Emergency -> Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.emergency_title), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onErrorContainer)
+                Text(
+                    stringResource(R.string.emergency_title), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onErrorContainer,
+                    // Announced as soon as it appears, so a TalkBack user doesn't have to find it.
+                    modifier = Modifier.semantics { heading(); liveRegion = LiveRegionMode.Assertive },
+                )
                 Text(stringResource(R.string.emergency_body), color = MaterialTheme.colorScheme.onErrorContainer)
                 Button(
                     onClick = { context.startActivity(Intent(Intent.ACTION_DIAL, "tel:911".toUri())) },
@@ -425,7 +446,8 @@ private fun ReadingProgress() {
 @Composable
 private fun TypingDots() {
     val t = rememberInfiniteTransition(label = "typing")
-    Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.padding(vertical = 6.dp)) {
+    // Decorative: the text next to it says the question is being read.
+    Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.padding(vertical = 6.dp).clearAndSetSemantics {}) {
         repeat(3) { i ->
             val a by t.animateFloat(
                 initialValue = 0.25f, targetValue = 1f, label = "dot$i",
@@ -463,10 +485,16 @@ private fun saveDownscaledPhoto(context: Context, uri: Uri, out: java.io.File, m
     }.getOrDefault(false)
 
 @Composable
-private fun SourceChip(s: Source) = AssistChip(
-    onClick = {},
-    label = { Text(s.label, color = if (s.fromClinician) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant) },
-)
+private fun SourceChip(s: Source) {
+    // A label, not a button: without this TalkBack says "double tap to activate" and nothing happens.
+    // The clinician/reference difference is only a colour on screen, so say it in words.
+    val spoken = stringResource(if (s.fromClinician) R.string.source_clinician_a11y else R.string.source_reference_a11y, s.label)
+    AssistChip(
+        onClick = {},
+        label = { Text(s.label, color = if (s.fromClinician) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant) },
+        modifier = Modifier.clearAndSetSemantics { contentDescription = spoken },
+    )
+}
 
 /**
  * The models write light Markdown. Show **bold** as bold and "* " / "- " lines as bullets;

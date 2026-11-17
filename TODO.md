@@ -78,7 +78,10 @@ Biggest wins first:
 - [ ] Keep chat history across app restarts (Room table, patient can delete).
 - [ ] Better retrieval: on-device embeddings in `embedding_blob` instead of keyword matching.
 - [ ] Multi-frame QR for long records.
-- [ ] Accessibility pass: TalkBack labels, large text, contrast.
+- [ ] Accessibility pass: large text (font scale 200%) and contrast still to check. TalkBack basics
+      done: tabs/radios/checkbox announce role and state, headings on titles, 48 dp send/stop/photo
+      targets, source chips read as text ("From your clinician: …"), decorative symbols hidden,
+      emergency card announced immediately. Still needs a real TalkBack walkthrough on a phone.
 
 ## 5. Clinic web app (`doctor-web/`)
 

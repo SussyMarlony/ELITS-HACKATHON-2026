@@ -29,6 +29,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 
 /** First launch: the phone's owner enters the details their clinic will see in the check-in code. */
 @Composable
@@ -50,7 +52,7 @@ fun OnboardingScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         LogoMark(88.dp, Modifier.padding(top = 16.dp))
-        Text(stringResource(R.string.onboarding_title), style = MaterialTheme.typography.headlineMedium)
+        Text(stringResource(R.string.onboarding_title), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
         Text(stringResource(R.string.onboarding_body), color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedTextField(
             value = name, onValueChange = { name = it }, singleLine = true,

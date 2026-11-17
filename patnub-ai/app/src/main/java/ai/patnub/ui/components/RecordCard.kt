@@ -20,6 +20,8 @@ import androidx.compose.ui.unit.dp
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 
 /** "18 Nov 2026" in the phone's locale; falls back to the raw text if it is not a date. */
 fun friendlyDate(iso: String): String =
@@ -49,7 +51,7 @@ fun RecordCard(
                     "✓ " + stringResource(R.string.record_badge) + " · " + friendlyDate(encounterDate),
                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.SemiBold,
                 )
-                Text(assessment ?: stringResource(R.string.record_untitled), style = MaterialTheme.typography.titleLarge)
+                Text(assessment ?: stringResource(R.string.record_untitled), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
                 Text(
                     approvedBy + if (version > 1) " · " + stringResource(R.string.record_version, version) else "",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,

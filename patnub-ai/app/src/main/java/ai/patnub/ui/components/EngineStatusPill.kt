@@ -27,6 +27,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 
 private const val POLL_MS = 2_000L
 
@@ -42,7 +45,7 @@ fun EngineStatusPill(engine: Engine, onManage: () -> Unit, modifier: Modifier = 
 
     Text(
         text = stringResource(if (state == EngineState.Generating) R.string.status_thinking else R.string.status_private),
-        modifier = modifier.clickable(onClickLabel = stringResource(R.string.engine_details)) { open = true },
+        modifier = modifier.clickable(onClickLabel = stringResource(R.string.engine_details), role = Role.Button) { open = true },
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -71,7 +74,7 @@ private fun EngineDetails(engine: Engine, state: EngineState, onManage: () -> Un
         }
     }
     Column(Modifier.padding(start = 24.dp, end = 24.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(stringResource(R.string.engine_details), style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(R.string.engine_details), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
         Text(stringResource(R.string.engine_details_body), color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (state == EngineState.Unloaded || state is EngineState.Failed) {
             Text(stringResource(R.string.engine_no_model), fontWeight = FontWeight.SemiBold)

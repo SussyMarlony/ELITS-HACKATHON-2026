@@ -45,6 +45,9 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
 
 /** The phone owner's profile: the details their clinic sees in the check-in code. */
 @Composable
@@ -86,12 +89,13 @@ private fun ProfileCard(user: UserEntity, onEdit: () -> Unit) {
                             user.displayName.firstOrNull()?.uppercase() ?: "?",
                             style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.clearAndSetSemantics {},
                         )
                     }
                 }
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(user.displayName, style = MaterialTheme.typography.titleLarge)
+                    Text(user.displayName, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
                     val subtitle = listOfNotNull(
                         user.age?.let { stringResource(R.string.onboarding_age) + " $it" },
                         user.barangay,
