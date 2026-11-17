@@ -20,6 +20,10 @@ data class ModelPackage(
     val budgetBytes: Long,
     val license: String,
     val licenseUrl: String,
+    /** Notice text the license requires to accompany the model (HAI-DEF §3.1.5), shown verbatim. */
+    val notice: String? = null,
+    /** Use restrictions users must be told about (HAI-DEF §3.1.1 / §3.2). */
+    val restrictionsUrl: String? = null,
 ) {
     val files: List<ModelFile> get() = listOfNotNull(main, vision)
     val totalBytes: Long get() = files.sumOf { it.bytes }
@@ -59,18 +63,27 @@ object ModelCatalog {
     private const val MEDGEMMA_TERMS = "Health AI Developer Foundations terms"
     private const val MEDGEMMA_TERMS_URL = "https://developers.google.com/health-ai-developer-foundations/terms"
 
+    /** Required word for word with every distribution of HAI-DEF models (HAI-DEF terms §3.1.5). */
+    const val HAI_DEF_NOTICE =
+        "HAI-DEF is provided under and subject to the Health AI Developer Foundations Terms of Use found at " +
+            "https://developers.google.com/health-ai-developer-foundations/terms"
+    private const val HAI_DEF_PROHIBITED_USE_URL =
+        "https://developers.google.com/health-ai-developer-foundations/prohibited-use-policy"
+
     val packages = listOf(
         ModelPackage(
             id = "medgemma-4b-resident", title = "MedGemma 1.5 4B · full",
             summary = "Google's medical model, held in memory. Fastest answers and reads photos (medicine packs, wounds, documents).",
             tier = PhoneTier.HIGH, main = medgemmaQ4, vision = medgemmaVision,
             streamed = false, budgetBytes = 0, license = MEDGEMMA_TERMS, licenseUrl = MEDGEMMA_TERMS_URL,
+            notice = HAI_DEF_NOTICE, restrictionsUrl = HAI_DEF_PROHIBITED_USE_URL,
         ),
         ModelPackage(
             id = "medgemma-4b-streamed", title = "MedGemma 1.5 4B · streamed",
             summary = "The same medical model, streamed from storage to fit in about 1.3 GB of memory. Text only, slower.",
             tier = PhoneTier.MID, main = medgemmaQ4, vision = null,
             streamed = true, budgetBytes = GiB, license = MEDGEMMA_TERMS, licenseUrl = MEDGEMMA_TERMS_URL,
+            notice = HAI_DEF_NOTICE, restrictionsUrl = HAI_DEF_PROHIBITED_USE_URL,
         ),
         ModelPackage(
             id = "gemma4-e2b", title = "Gemma 4 E2B",

@@ -131,6 +131,10 @@ fun ModelScreen(
                 Text(stringResource(R.string.models_agree, selected.license), modifier = Modifier.weight(1f))
             }
             TextButton(onClick = { uri.openUri(selected.licenseUrl) }) { Text(stringResource(R.string.models_read_license)) }
+            // HAI-DEF §3.1.1: users must be told about the use restrictions before they get the model.
+            if (state != InstallState.Ready) {
+                selected.restrictionsUrl?.let { url -> UseRestrictions(url) { uri.openUri(it) } }
+            }
 
             when (state) {
                 is InstallState.Downloading -> Progress(stringResource(R.string.models_downloading), state.progress)
@@ -172,8 +176,37 @@ fun ModelScreen(
         if (engineState is EngineState.Failed) {
             Text(stringResource(R.string.models_load_failed, engineState.error.message ?: ""), color = MaterialTheme.colorScheme.error)
         }
+
+        // Licence notices for every model on the phone, kept visible after install (TODO.md §7).
+        // Both MedGemma packages share one file, so list each model once.
+        val onPhone = ModelCatalog.packages.filter { states[it.id] == InstallState.Ready }.distinctBy { it.main.fileName }
+        if (onPhone.isNotEmpty()) {
+            SectionCard(stringResource(R.string.models_licenses)) {
+                onPhone.forEach { p -> LicenseNotice(p) { uri.openUri(it) } }
+            }
+        }
         Text(stringResource(R.string.models_privacy), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+/** One installed model's licence: name, the required notice word for word, and links. */
+@Composable
+private fun LicenseNotice(p: ModelPackage, open: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // "MedGemma 1.5 4B · streamed" and "· full" are the same model.
+        Text(p.title.substringBefore(" · "), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.models_license_line, p.license))
+        p.notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        TextButton(onClick = { open(p.licenseUrl) }) { Text(stringResource(R.string.models_read_license)) }
+        p.restrictionsUrl?.let { UseRestrictions(it, open) }
+    }
+}
+
+/** What the licence forbids (HAI-DEF §3.2), with a link to Google's prohibited-use policy. */
+@Composable
+private fun UseRestrictions(url: String, open: (String) -> Unit) {
+    Text(stringResource(R.string.models_use_restrictions), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    TextButton(onClick = { open(url) }) { Text(stringResource(R.string.models_prohibited_uses)) }
 }
 
 @Composable

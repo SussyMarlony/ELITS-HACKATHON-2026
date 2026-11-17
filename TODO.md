@@ -108,7 +108,10 @@ Biggest wins first:
 
 - [ ] Signing config, R8/minify, check APK size (ML Kit OCR + barcode are ~20 MB per ABI).
 - [ ] ML Kit may send anonymous usage logs now that the app has INTERNET; review or replace.
-- [ ] Privacy policy and store listing; model license notices in the app (HAI-DEF terms, Apache 2.0).
+- [ ] Privacy policy and store listing. Third-party notices for bundled code (llama.cpp and ggml
+      are MIT and need their copyright notice in the app; also msr_engine, Tink, ML Kit terms).
+- [x] Model license notices in the app: the model screen shows each installed model's license,
+      the HAI-DEF notice word for word, and the HAI-DEF use restrictions (also before download).
 - [ ] Replace the demo root key (`contract/demo/`) before any real clinic.
 
 ## 8. Team
