@@ -1,0 +1,31 @@
+<resources>
+    <string name="app_name">patnub.ai</string>
+
+    <string name="role_patient">Patient</string>
+    <string name="role_doctor">Doctor</string>
+    <string name="engine_offline">Engine not connected</string>
+
+    <string name="tab_assistant">Assistant</string>
+    <string name="tab_records">Records</string>
+    <string name="tab_scan">Scan</string>
+    <string name="tab_medicines">Medicines</string>
+    <string name="tab_visits">Visits</string>
+
+    <string name="placeholder_assistant">Ask health questions. Answers will come from reviewed DOH/PNF sources and your doctor\'s approved records.</string>
+    <string name="placeholder_records">Your doctor-approved visit records will appear here.</string>
+    <string name="placeholder_scan">Scan a QR code from your doctor to save a visit record.</string>
+    <string name="placeholder_medicines">Look up a medicine or scan its packaging.</string>
+    <string name="placeholder_visits">Prepare questions before a visit, or write a recap after one.</string>
+
+    <string name="doctor_step_write">Write note</string>
+    <string name="doctor_step_review">Review AI draft</string>
+    <string name="doctor_step_issue">Issue QR</string>
+    <string name="placeholder_doctor_write">Write the consultation note in English or Taglish.</string>
+    <string name="placeholder_doctor_review">Check and correct the structured fields before approving.</string>
+    <string name="placeholder_doctor_issue">Share the approved record with the patient as a single-use QR code.</string>
+    <string name="action_back">Back</string>
+    <string name="action_next">Next</string>
+    <string name="action_start_over">Start over</string>
+
+    <string name="coming_soon">Not built yet</string>
+</resources>
