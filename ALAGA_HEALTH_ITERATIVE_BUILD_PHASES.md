@@ -8,6 +8,34 @@
 
 ---
 
+## 0. v1.2 Re-plan (18 Nov 2026) — read this first
+
+This section **supersedes** the architecture and phases below wherever they disagree (spec v1.2, §4.6.1, §7.5, §8.1). The sections below are kept for their detailed task notes, which still apply to the patient Assistant (Phase 2), Medicines and Visits (Phase 5) and engine tuning (Phase 6).
+
+**What changed**
+- **No internet at the point of care**, on either side. Internet only to install, update and (later) renew a license.
+- **Patient side = native Android app** (`patnub-ai/`, Kotlin + Compose), patient-only. Not Capacitor/WebView. One profile and key pair per phone.
+- **Clinician side = offline PWA** (`doctor-web/`, Vite + TypeScript, prototype look), static on Cloudflare Pages, data in IndexedDB, one shared device per clinic, one Clinician role with an admin flag.
+- **Shared `contract/`**: check-in code, certificate and QR payload formats, test vectors, demo signing scripts.
+- **No backend, no `127.0.0.1` HTTP bridge, no server-side QR grants.** Records travel as signed, encrypted offline QR codes.
+- Clinic AI structuring is **rule-based** for the demo (port of `parseNote`). The AI showpiece is the patient Assistant running MedGemma on the phone.
+- Clinics hold an annual **license certificate**; patients are free.
+
+**Revised phases** (A = Android, W = doctor-web, C = contract)
+
+| # | Phase | Work | Exit gate | Status |
+|---|---|---|---|---|
+| 1 | Foundations | A: shell, Room DB, `Engine` + `FakeEngine`, status pill (done); remove Doctor view and patient switcher; onboarding creates the one profile + key pair. A: JNI bridge to `libmsr_engine` (needs NDK, submodule, real phone). W: Vite + TS PWA scaffold that installs and reloads offline; Cloudflare Pages deploy. C: first draft of the formats | App boots in Airplane Mode with real engine stats; PWA reloads with the network off | **In progress** |
+| 2 | Patient Assistant | A: red-flag gate and keyword retrieval (done, unit-tested); prompt builder; streaming chat UI with source badges; deterministic fallback | The 3 test prompts in §3 Phase 2 behave correctly | Logic done, UI pending |
+| 3 | Clinic app core | W: license import; clinician accounts, passcodes and admin flag; patient list from camera-scanned check-in codes; note composer with rule-based draft; edit and approve; audit log; encrypted export/import backup | Admin activates a license, adds a clinician, scans a patient, approves a Taglish note, survives a browser restart and a backup round-trip | Not started |
+| 4 | Offline QR transfer | C: signing/encryption formats with test vectors; demo root key and license-signing script. W: issue QR (single and multi-frame), supersede, reissue to a new phone. A: scan, verify chain, decrypt, preview, consent, import; Records timeline; Assistant uses imported records | With both devices offline: check-in → note → approve → scan → record in timeline → Assistant cites it. Wrong phone cannot decrypt; duplicate import refused | Not started |
+| 5 | Medicines and Visits | A: as in §3 Phase 5 | As in §3 Phase 5 | Not started |
+| 6 | Tuning, QA, demo polish | A: engine tuning (§3 Phase 6). Both: Spec §12 tests, demo reset on each device, demo script using a laptop or tablet (clinic) and a phone (patient) | Full loop offline in < 90 s; peak VmRSS ≤ 1,310 MiB | Not started |
+
+The team role split in §4 predates v1.2: `doctor-web/` and `contract/` need owners.
+
+---
+
 ## 1. Codebase Integration Matrix (`alaga-health` x `ravin` x `Spec`)
 
 | Frontend Feature in [`alaga-health/index.html`](./alaga-health/index.html) | Current Prototype Implementation | Target Upgrade with [`ravin/sdk`](./ravin/sdk/CMakeLists.txt) + Local `SQLite` | Spec Requirement |

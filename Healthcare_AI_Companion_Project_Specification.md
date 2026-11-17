@@ -2,12 +2,12 @@
 
 **Working title:** Kalusugan+ (provisional; name and branding are not yet approved)  
 **Document status:** Product specification draft  
-**Version:** 1.1  
+**Version:** 1.2  
 **Date:** 18 November 2026  
 **Product type:** Patient-facing healthcare companion with a clinician portal  
 **Primary audience:** Patients in rural and underserved communities, and the healthcare professionals who care for them
 
-> **v1.1 changes (18 Nov 2026):** the patient app is a native Android app and the clinician portal is a separate web app, delivered from three repositories (§7.5). Record transfer is a fully offline, signed and encrypted QR with no server round trip (§4.6.1). This resolves open decisions 3 and 11 and adds decisions 16–19 (§14). Where §4.6 and §7.3 describe an opaque token redeemed against a backend, §4.6.1 and §7.5 now take precedence.
+> **v1.2 changes (18 Nov 2026), replacing v1.1:** the whole system works with **no internet at the point of care**; internet is needed only to install and update. One repository holds the native Android **patient-only** app, an offline-first **clinician web app** (PWA, served as static files from Cloudflare Pages) and a shared `contract/`. There is **no backend API**. Records move from clinic to patient by a signed, encrypted offline QR (§4.6.1). Clinics buy an annual license; patients use the app free (§8.1). Where §2.4, §4.6, §7.1–§7.3 describe a backend, accounts or server-redeemed tokens, §4.6.1, §7.5 and §8.1 take precedence. Settled decisions are listed in §14.
 
 > This document consolidates the product direction discussed so far. Product goals and features that were explicitly discussed are treated as product requirements. Technical choices and rollout priorities that were not finalized are identified as recommendations or open decisions rather than settled facts.
 
@@ -95,8 +95,9 @@ Access must be enforced by the backend, not merely hidden in the user interface.
 
 ### 3.1 Patient application
 
-- Native Android application (repository `patnub-ai`). It is **patient-only**: there is no clinician role, doctor screen or role switch in the app.
-- Runs fully on the phone (local model, local database) and has no `INTERNET` permission. It needs the `CAMERA` permission for QR scanning.
+- Native Android application (`patnub-ai/`). It is **patient-only**: no clinician screens or role switch.
+- One patient profile per phone, created at onboarding (name, age, barangay) together with a key pair kept on the phone. Shows a **check-in code** (QR) with that profile and the public key.
+- Runs fully on the phone (local model, local database) and has no `INTERNET` permission. It needs `CAMERA` for scanning.
 - A simple home screen with prominent access to the AI assistant and common tasks.
 - Large, readable controls and plain-language labels.
 - Support text input first; voice input can be added with speech-to-text support.
@@ -104,7 +105,10 @@ Access must be enforced by the backend, not merely hidden in the user interface.
 
 ### 3.2 Doctor portal
 
-- Responsive web dashboard for clinicians (repository `patnub-doctor-web`), backed by the API (repository `patnub-api`).
+- Offline-first web app for clinicians (`doctor-web/`): a PWA installed once from Cloudflare Pages, then used with no connection. Data lives in the browser (IndexedDB).
+- Demo deployment: **one shared device per clinic**. Each clinician unlocks it with their own passcode.
+- One account type, **Clinician** (doctor, nurse or midwife), with an **admin flag**. The first account, created when the clinic license is activated, is admin + clinician. Admins add and disable clinicians.
+- Note composer with a **rule-based draft** that pre-fills the structured fields from the note; the clinician edits and approves. An in-browser LLM is a later stretch, not part of the demo.
 - Patient and consultation context should be visible only to authenticated, authorized users.
 - A focused consultation-summary composer with review, approval, QR generation, and record-status actions.
 
@@ -303,27 +307,28 @@ The QR code is a secure transfer mechanism for a doctor-approved record. It shou
 - Provide a way to revoke an unredeemed code and correct or supersede an issued record.
 - Do not treat possession of a QR image alone as sufficient proof that a person is authorized to view or import the record.
 
-### 4.6.1 Offline QR transfer (v1.1 decision)
+### 4.6.1 Offline QR transfer (v1.2)
 
-The QR carries the record itself, so the phone never contacts a server to import it. Because it contains health information, the payload is **encrypted to the intended patient's phone** and **signed by the clinician**. The "no raw PHI in the visible payload" rule above is met by encryption, not by omission.
+The QR carries the record itself, so the phone never contacts a server. Because it contains health information, the payload is **encrypted to the intended patient's phone** and **signed by the issuing clinician**. The "no raw PHI in the visible payload" rule above is met by encryption.
 
-**Pairing (once per visit).** The patient app shows a *check-in code*: a QR holding the patient's reference and the public half of a key pair generated and kept on the phone (X25519). The clinician portal scans or enters it when the patient is selected. This replaces the "identity matching" guess with a cryptographic one: only the intended phone can decrypt the record, so a wrong-patient scan fails by construction.
+**Check-in.** The clinician app scans the patient's check-in code with the device camera (webcam or phone camera). It stores the patient in a local list keyed by the public key, so a returning patient is recognised without typing. Showing the code is the patient's consent to share those profile details.
 
-**Issuing.** On approval the API builds the *patient copy* of the record (structured, clinician-approved fields only), compresses it, signs it with the clinician's key, encrypts it to the patient's public key, and returns it as one QR, or as a numbered sequence of QR frames when it does not fit in one.
+**Issuing.** On approval the clinician app builds the *patient copy* (approved structured fields only), compresses it, signs it with the clinician's key, encrypts it to the patient's public key (X25519), and shows it as one QR, or as numbered QR frames if it does not fit.
 
-**Payload (version 1)**, in order: format version, issue and expiry time, record ID and record version, clinician certificate, ephemeral public key + nonce, ciphertext (compressed record) + authentication tag, Ed25519 signature over everything before it.
+**Payload (format version 1):** format version, issue and expiry time, record ID and version, clinic license certificate, staff certificate, ephemeral public key + nonce, ciphertext + tag, Ed25519 signature over all of it.
 
-**Clinician trust.** The app bundles a root public key. Each clinician holds a short-lived certificate (ID, name, PRC number, facility, public key, validity) signed by that root and included in the QR, so the app can verify a clinician it has never seen, offline.
+**Trust chain, checked offline by the patient app:** root public key (bundled in the APK) → **clinic license certificate** (clinic/RHU name and ID, admin public key, valid until the end of the subscription) → **staff certificate** signed by the clinic admin (name, profession such as MD/RN/RM, license number, public key, validity) → record signature. The patient app shows "Approved by <name>, <profession>, PRC <number>, <clinic>".
 
-**Patient app on scan.** Check the signature and certificate chain, check expiry against the phone clock, check the record ID and version have not been imported already, decrypt, show the preview, require explicit consent, then store the record with its clinician source and approval metadata.
+**Patient app on scan.** Verify the chain and signature, check expiry, refuse a record ID and version already imported, decrypt, preview, require consent, store with source and approval metadata.
 
-**Size.** A QR holds at most about 2.9 KB (binary, lowest error correction) and about 2.3 KB at medium error correction. Fixed overhead is roughly 350 bytes (certificate, signature, key, nonce, tag). That leaves roughly 2 KB of compressed record, which is a short consultation summary. Longer records use animated multi-frame QR. These are estimates to confirm against real records and real phone cameras.
+**Size.** A QR holds at most about 2.9 KB (binary, low error correction), about 2.3 KB at medium. Overhead with both certificates is roughly 750 bytes, leaving about 1.5 KB of compressed record: a short consultation summary. Longer records use animated multi-frame QR. Estimates; confirm with real records and phone cameras.
 
-**What this model cannot do.** State the limits in the UI and in clinician training:
-- **No remote revocation of an issued QR.** A scan works offline, so it cannot be recalled. The defence is a short expiry plus a *superseding record version*: a higher version of the same record ID replaces the earlier one on the patient's phone when imported.
-- **No server-enforced single use.** The app instead refuses to import the same record ID and version twice. Another phone cannot use the code because it cannot decrypt it.
-- **Possession of a photo of the QR is not enough** to read it, but a photo plus the patient's unlocked phone is. Protect the app with the phone's screen lock or app lock.
-- The patient never receives the clinician's raw note. It stays on the clinician side (§4.5 preservation rule). The patient copy contains only the approved structured fields.
+**Limits of the offline model** (state them in the UI and in clinician training):
+- **No remote revocation** of an issued QR. Defences: short expiry, and a *superseding record version* (same record ID, higher version) replaces the earlier one when imported.
+- **No server-enforced single use.** The app refuses duplicates; other phones cannot decrypt.
+- A photo of the QR is useless without the patient's phone; protect the app with the phone's screen lock.
+- The clinician's **raw note never leaves the clinic device**; the patient copy holds only approved structured fields (§4.5 preservation rule is met on the clinic side).
+- **Lost or replaced patient phone:** the clinic reissues past records to the new phone's check-in code. There is no cloud backup.
 
 #### Memory terminology and design
 
@@ -616,21 +621,20 @@ Import record into patient account
 Patient-scoped RAG context
 ```
 
-### 7.3.1 Doctor QR flow, offline (v1.1)
+### 7.3.1 Doctor QR flow, offline (v1.2)
 
 ```text
-Patient phone                          Clinician portal (web)  ->  API
-  show check-in code (public key) ---> scan code, select patient
-                                       write note -> AI structuring -> clinician approves
-                                       API: build patient copy, compress,
-                                            sign (clinician key), encrypt (patient key)
-  scan QR  <---------------------------- display QR (or numbered frames)
-  verify signature + cert + expiry
-  decrypt -> preview -> patient consent
-  save to local DB -> available as Collection B for RAG
+Patient phone (Android, offline)       Clinic device (PWA, offline)
+  show check-in code (profile+key) --> camera scan, patient saved locally
+                                       write note -> rule-based draft -> clinician edits, approves
+                                       build patient copy, compress,
+                                       sign (staff key), encrypt (patient key)
+  scan QR  <-------------------------- display QR (or numbered frames)
+  verify root -> license -> staff -> signature, expiry
+  decrypt -> preview -> consent -> save locally -> Collection B for RAG
 ```
 
-No network call is made by the phone at any step.
+Neither device makes a network call.
 
 ### 7.4 Design constraints
 
@@ -642,23 +646,36 @@ No network call is made by the phone at any step.
 - Version prompts, models, sources, safety rules, and evaluation sets so behavior can be audited.
 - Preserve provenance for every doctor-issued record and every cited knowledge source.
 
-### 7.5 Repositories and responsibilities (v1.1)
+### 7.5 Repository and responsibilities (v1.2)
 
-| Repo (proposed name) | Owns | Does not own |
-|---|---|---|
-| `patnub-ai` | Android patient app: Assistant, Records, Scan, Medicines, Visits; on-device model (`msr_engine`); local database; QR verify, decrypt and import; check-in code | Clinician features, signing keys, anything that needs a network |
-| `patnub-doctor-web` | Clinician UI: sign-in, patient selection (scan check-in code), note composer, AI-draft review, approval, QR display, record history and supersede | Business rules and keys. It calls the API |
-| `patnub-api` | Clinician authentication and verification, clinician certificates and the root key, patient-copy building, signing, encryption, the clinician-side record store and revisions, audit events, and the **contract** | The patient's on-phone data |
+One repository, three folders:
 
-**Contract.** The QR payload format, the patient-copy JSON schema, the check-in code format and the API's OpenAPI description are defined in `patnub-api/contract/`, with **test vectors** (a known key pair, record and resulting QR bytes). The Android app and the web app copy that folder, and both must pass the vectors. This replaces a fourth repo. Version the contract and bump the payload format version on any breaking change.
+| Folder | Owns |
+|---|---|
+| `patnub-ai/` | Android patient app: onboarding and key pair, check-in code, Assistant (on-device MedGemma via `msr_engine`), Records, Scan (verify, decrypt, import), Medicines, Visits; local database |
+| `doctor-web/` | Clinician PWA (Vite + TypeScript, no framework, styled after the `alaga-health` prototype's doctor portal): license activation, clinician accounts and passcodes, patient list, note composer and rule-based draft, approval, QR issuing, record history and supersede, audit log, encrypted export/import backup. Deployed as static files to Cloudflare Pages |
+| `contract/` | Formats shared by both apps: check-in code, certificates, QR payload, patient-copy JSON schema; **test vectors** both apps must pass; demo scripts that hold the demo root key and sign clinic license files |
 
-**Data placement.** The raw clinician note, drafts, revisions and audit trail live on the clinician side (API database). The patient's phone holds only issued patient copies, chat history, visit notes and the knowledge base. Nothing patient-side is uploaded.
+There is no backend. Bump the payload format version on any breaking change.
 
-**Impact on the build plan.** Phase 3 (clinician AI structuring and approval) and the doctor half of Phase 4 move to `patnub-doctor-web` and `patnub-api`; the Android Phase 4 work becomes the offline QR verify and import described in §4.6.1. The current doctor screens and role switch in the app are to be removed.
+**Data placement.** Clinic side (one browser): clinicians, patients seen, raw notes, drafts, issued records and revisions, audit log, keys (encrypted with each clinician's passcode). Patient side (one phone): profile, key pair, imported patient copies, chat history, visit notes, knowledge base. Nothing is synced.
+
+**Clinic device data loss.** The admin exports an encrypted backup (protected by the admin passcode) to a USB stick; the app reminds them. Re-importing the license file restores the ability to issue.
+
+**Knowledge base and app updates** ship with app updates (APK / PWA refresh), which need internet once.
 
 ---
 
 ## 8. Security, privacy, and governance
+
+### 8.1 Licensing (v1.2)
+
+- Patients use the app free. Each clinic/RHU buys an **annual license**, delivered as a signed license file (§4.6.1, clinic license certificate) that the admin imports into the clinician app.
+- **On expiry** the clinician app stops issuing new QRs and shows a renewal prompt; existing clinic records stay readable. The patient app keeps every imported record and still accepts a QR issued while the license was valid. Patients never lose care information because a clinic did not renew.
+- Known demo gap: issue time is set by the clinic device, so an expired clinic could backdate. Acceptable for the demo; a real deployment needs a mitigation (for example short-lived staff certificates renewed with the license).
+- **Demo:** a script in `contract/` signs license files with the demo root key. **Later:** a Cloudflare Worker sells and renews licenses and returns the signed file. It is used about once a year and never at the point of care.
+- Demo shortcuts (demo root key in the repo, single shared device, backdating gap) must be labelled in code and replaced before real use.
+
 
 Healthcare information is highly sensitive. Privacy and security requirements must be designed in from the beginning.
 
@@ -863,23 +880,23 @@ The following decisions still need to be made before implementation is fully spe
 
 1. **Product name and brand:** Is “Kalusugan+” the chosen name or only a visual placeholder?
 2. **Initial deployment location:** Which country, region, and rural communities will be served first?
-3. ~~**Target devices.**~~ **Resolved in v1.1:** native Android patient app; clinicians use a web app. iOS is not planned.
-4. **Doctor onboarding:** Who verifies clinicians, credentials, and facility affiliations?
-5. **Patient identity matching:** What process links a doctor's encounter to the correct patient account?
+3. ~~**Target devices.**~~ **Resolved (v1.2):** native Android patient app; clinicians use an offline PWA on any device with a browser and camera. iOS is not planned.
+4. ~~**Doctor onboarding.**~~ **Resolved for the demo (v1.2):** each licensed clinic's admin creates clinician accounts; the staff certificate records profession and license number. Who verifies licenses in a real deployment is still open.
+5. ~~**Patient identity matching.**~~ **Resolved (v1.2):** the patient's check-in code binds the record to that phone's key (§4.6.1).
 6. **Medical content sources:** Which organizations and reference databases will be approved, and who reviews updates?
 7. **Clinical governance:** Which qualified clinicians will define and approve symptom safety rules, triage language, and medication content?
-8. **QR policy:** Should a code be single-use, time-limited, reusable by the same patient, or governed by different policies for different record types?
+8. ~~**QR policy.**~~ **Resolved (v1.2):** time-limited, one import per record version, superseded by a higher version; no remote revocation (§4.6.1).
 9. **Consent and retention:** What are the retention, correction, deletion, and revocation rules for patient records and chat history?
 10. **Language priorities:** Which local languages should be supported first, and who will clinically review translations?
-11. ~~**Connectivity assumptions.**~~ **Resolved in v1.1:** the patient app is fully offline, including record import (§4.6.1). The clinician portal and API require a connection.
+11. ~~**Connectivity assumptions.**~~ **Resolved (v1.2):** no internet at the point of care on either side; internet only to install, update and (later) renew licenses.
 12. **Integration needs:** Will the first release connect to clinic systems, pharmacies, national health systems, or external medical records, or remain standalone?
 13. **Deployment and compliance:** What hosting region, legal basis, privacy controls, and regulatory pathway apply to the selected market?
 14. **AI and infrastructure stack:** Which LLM, embedding model, vector database, application framework, and hosting provider will be used?
 15. **Business and operating model:** Who funds the service, maintains medical content, supports patients, and handles clinical escalations?
-16. **Clinician AI structuring (new in v1.1):** Notes now go to the API. Which model structures them: one hosted by the project, a self-hosted model, or a third-party service? Raw notes are health information, so a third-party service needs a privacy review and patient or facility consent.
-17. **Offline QR details:** Confirm the payload size limits with real records. How is the patient's check-in code delivered to the clinician's computer (webcam scan, typed short code, or both)? Do multi-frame QR codes need to be supported in the first release?
-18. **Key and certificate management:** Who holds the root key, how long do clinician certificates last, and how is a lost or revoked clinician removed given that phones are offline (short certificate life, app updates)?
-19. **Patient copy scope:** Which fields appear in the patient copy, and is the raw clinician note ever shared with the patient?
+16. **Clinician AI structuring:** demo uses a rule-based draft. Is an in-browser LLM worth adding later, given model size and WebGPU support on clinic PCs?
+17. **Offline QR details:** confirm size limits with real records; decide whether multi-frame QR is needed in the first release.
+18. **Root key custody and real license verification:** who holds the production root key, and how is a clinic or clinician removed early when phones are offline (short certificate life, app updates)?
+19. **Multi-device clinics:** sync or per-device records once a clinic has more than one device.
 
 ---
 

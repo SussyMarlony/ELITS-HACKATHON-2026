@@ -1,7 +1,7 @@
 # Project Context — patnub.ai (Alaga Health / Kalusugan+)
 
 > Single-file orientation for the whole repo (ELITS-HACKATHON-2026). Read this first.
-> Last updated: 2026-11-18. Where this file and a source doc disagree, the source doc wins; check it.
+> Last updated: 2026-11-18 (v1.2 re-plan). **v1.2:** no internet at the point of care; Android app is patient-only; clinicians use an offline PWA in `doctor-web/` (Cloudflare Pages, static); shared formats in `contract/`; no backend; records move by signed, encrypted offline QR; clinics hold an annual license. See spec v1.2 and build plan §0, which win over older text in this file. Where this file and a source doc disagree, the source doc wins; check it.
 
 ## 1. What this is
 
@@ -22,6 +22,9 @@ Everything runs **on the phone**: a quantized MedGemma model, a local SQLite dat
 | Folder / file | Role | Status |
 |---|---|---|
 | **`patnub-ai/`** | **The real project.** Native Android app (Kotlin + Jetpack Compose). Everything ships from here. | App shell only; every screen is a placeholder |
+| `doctor-web/` | **Planned.** Clinician offline PWA (Vite + TypeScript), static on Cloudflare Pages. | Not started |
+| `contract/` | **Planned.** Check-in code, certificate and QR payload formats, test vectors, demo license-signing scripts. | Not started |
+| `msr_engine/` | Git submodule: the `libmsr_engine` runtime (replaces `ravin/`). Run `git submodule update --init`. | Empty until initialised |
 | `ravin/` | Supplement. `mobile-stream-runtime` / `libmsr_engine`: C/C++ inference engine that streams GGUF weights from storage into a bounded RAM arena. Will be bridged into patnub-ai (JNI). | Phases 1–4 done, benchmarked on a real phone |
 | `alaga-health/` | Supplement. Single-file HTML prototype (`index.html`) of the 5-tab patient UI and 3-step doctor portal. UX/behaviour reference, not shipped. | Mock logic (regex "AI", in-memory state) |
 | `Healthcare_AI_Companion_Project_Specification.md` | Supplement. Product spec: requirements, RAG safety, QR workflow, data model, QA, risks, open decisions. | v1.0 draft, 2026-11-17 |
@@ -131,7 +134,7 @@ Fallback rule: if the model is unavailable or slow, the UI falls back to determi
 | 5 | Medicines lookup/scan, Visits prep/recap | Spec §4.8–4.10 satisfied |
 | 6 | Runtime tuning, QA suite, demo polish | 10/10 spec §12 tests pass; peak VmRSS ≤ 1,310 MiB; full doctor→patient→RAG loop offline in < 90 s |
 
-**Current position:** start of Phase 1 (shell done, SQLite + bridge + telemetry pending).
+**Current position (v1.2 phases, build plan §0):** Phase 1 in progress (Android shell, Room DB, `Engine`/`FakeEngine`, status pill done; Doctor view removal, onboarding, JNI bridge, `doctor-web/` scaffold pending). Phase 2 logic (red-flag gate, keyword retrieval) done and unit-tested; UI pending.
 
 ## 7. ravin (on-device inference engine)
 
