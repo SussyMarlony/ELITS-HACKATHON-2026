@@ -9,6 +9,7 @@ plugins {
 android {
     namespace = "ai.patnub"
     compileSdk = 37
+    ndkVersion = "30.0.16248370"
 
     defaultConfig {
         applicationId = "ai.patnub"
@@ -16,6 +17,25 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+
+        // arm64: real phones. x86_64: emulators on a PC.
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        externalNativeBuild {
+            cmake {
+                // llama.cpp source with the msr patch; see scripts/prepare-native.sh.
+                providers.gradleProperty("llamaDir").orNull?.let { arguments += "-DLLAMA_DIR=$it" }
+                arguments += listOf("-DCMAKE_BUILD_TYPE=Release", "-DANDROID_STL=c++_shared")
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "4.1.2"
+            // Keep the large native build tree out of the source folder.
+            buildStagingDirectory = layout.buildDirectory.dir("cxx").get().asFile
+        }
     }
 
     buildTypes {

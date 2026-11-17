@@ -38,6 +38,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.InputChip
+import androidx.compose.material3.TextButton
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -59,7 +64,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 sealed interface ChatItem {
-    data class Question(val text: String) : ChatItem
+    data class Question(val text: String, val hasPhoto: Boolean = false) : ChatItem
     data class Answer(val reply: Reply, val text: String = "", val done: Boolean = false) : ChatItem
 }
 
@@ -73,20 +78,25 @@ class ChatState(private val scope: CoroutineScope) {
     var busy by mutableStateOf(false)
         private set
 
-    fun send(question: String, assistant: Assistant, selfId: String) {
-        val q = question.trim()
+    fun send(question: String, assistant: Assistant, selfId: String, imagePath: String? = null) {
+        val q = question.trim().ifEmpty { if (imagePath != null) "What is in this photo?" else "" }
         if (q.isEmpty() || busy) return
         busy = true
-        items += ChatItem.Question(q)
+        items += ChatItem.Question(q, hasPhoto = imagePath != null)
         scope.launch {
             val index = items.size
             try {
-                val reply = assistant.ask(q, selfId)
+                val reply = assistant.ask(q, selfId, imagePath)
                 items += ChatItem.Answer(reply)
                 if (reply is Reply.Answer) {
-                    reply.text.collect { piece ->
-                        val cur = items[index] as ChatItem.Answer
-                        items[index] = cur.copy(text = cur.text + piece)
+                    try {
+                        reply.text.collect { piece ->
+                            val cur = items[index] as ChatItem.Answer
+                            items[index] = cur.copy(text = cur.text + piece)
+                        }
+                    } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        items[index] = ChatItem.Answer(Reply.NoMatch)
                     }
                 }
             } finally {
@@ -98,8 +108,25 @@ class ChatState(private val scope: CoroutineScope) {
 }
 
 @Composable
-fun AssistantScreen(chat: ChatState, assistant: Assistant, selfId: String, modifier: Modifier = Modifier) {
+fun AssistantScreen(
+    chat: ChatState,
+    assistant: Assistant,
+    selfId: String,
+    modelReady: Boolean,
+    onManageModel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var input by rememberSaveable { mutableStateOf("") }
+    var photo by rememberSaveable { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    // Photo Picker: no storage permission; the photo is copied into app cache for the model.
+    val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            val out = java.io.File(context.cacheDir, "question-photo.jpg")
+            context.contentResolver.openInputStream(uri)?.use { i -> out.outputStream().use { i.copyTo(it) } }
+            photo = out.path
+        }
+    }
     val listState = rememberLazyListState()
     val last = chat.items.lastOrNull()
     // Follow new messages. While text streams in, follow only if the last message is on screen,
@@ -113,14 +140,18 @@ fun AssistantScreen(chat: ChatState, assistant: Assistant, selfId: String, modif
     }
 
     fun send(text: String) {
-        chat.send(text, assistant, selfId)
+        chat.send(text, assistant, selfId, photo)
         input = ""
+        photo = null
     }
 
     Column(modifier) {
         if (chat.items.isEmpty()) {
             Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 EmptyState(stringResource(R.string.assistant_empty_title), stringResource(R.string.assistant_intro))
+                if (!modelReady) {
+                    TextButton(onClick = onManageModel) { Text(stringResource(R.string.assistant_install_model), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
+                }
                 FlowRow(
                     Modifier.padding(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
@@ -142,7 +173,7 @@ fun AssistantScreen(chat: ChatState, assistant: Assistant, selfId: String, modif
                     when (item) {
                         is ChatItem.Question -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                             Text(
-                                item.text,
+                                (if (item.hasPhoto) "📷 " else "") + item.text,
                                 color = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier
                                     .widthIn(max = 300.dp)
@@ -155,11 +186,24 @@ fun AssistantScreen(chat: ChatState, assistant: Assistant, selfId: String, modif
                 }
             }
         }
+        if (photo != null) {
+            InputChip(
+                selected = true, onClick = { photo = null },
+                label = { Text(stringResource(R.string.assistant_photo_attached)) },
+                trailingIcon = { Text("×") },
+                modifier = Modifier.padding(start = 12.dp),
+            )
+        }
         Row(
             Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            if (assistant.supportsImages) {
+                TextButton(onClick = { pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+                    Text(stringResource(R.string.assistant_photo))
+                }
+            }
             OutlinedTextField(
                 value = input, onValueChange = { input = it },
                 placeholder = { Text(stringResource(R.string.assistant_hint)) },
@@ -168,7 +212,7 @@ fun AssistantScreen(chat: ChatState, assistant: Assistant, selfId: String, modif
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { send(input) }),
             )
-            Button(onClick = { send(input) }, enabled = !chat.busy && input.isNotBlank()) { Text(stringResource(R.string.assistant_send)) }
+            Button(onClick = { send(input) }, enabled = !chat.busy && (input.isNotBlank() || photo != null)) { Text(stringResource(R.string.assistant_send)) }
         }
     }
 }
@@ -196,10 +240,10 @@ private fun AnswerBubble(item: ChatItem.Answer) {
             )
         }
         Reply.NoMatch -> Card(bubble) { Text(stringResource(R.string.no_match), Modifier.padding(16.dp)) }
+        Reply.NeedsModel -> Card(bubble) { Text(stringResource(R.string.assistant_needs_model), Modifier.padding(16.dp)) }
         is Reply.Answer -> Card(bubble, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (r.fallback) Label(stringResource(R.string.answer_fallback))
-                else if (r.simulated) Label(stringResource(R.string.answer_simulated), MaterialTheme.colorScheme.error)
                 if (item.text.isEmpty() && !item.done) TypingDots() else Text(item.text)
                 if (item.done && r.sources.isNotEmpty()) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

@@ -9,9 +9,12 @@ import ai.patnub.data.local.entity.ClinicalRecordEntity
 object PromptBuilder {
     const val MAX_CONTEXT_CHARS = 1_200 // ~300 tokens
 
-    fun build(question: String, general: List<ScoredChunk>, records: List<ClinicalRecordEntity>): String = buildString {
+    fun build(question: String, general: List<ScoredChunk>, records: List<ClinicalRecordEntity>, withImage: Boolean = false): String = buildString {
         appendLine("You are a health information assistant for patients in the Philippines.")
         appendLine("Rules: use plain language. Use ONLY the context below. Do not diagnose. Never change, start or stop a medicine or dose.")
+        if (withImage) {
+            appendLine("The patient attached a photo. Say plainly what you can see. If it is a medicine package, read the name, strength and form exactly as printed. If you are unsure, say so. Do not guess a diagnosis from a photo.")
+        }
         appendLine("Keep general information separate from the patient's own doctor record. If the context does not answer, say so and suggest seeing their clinician.")
         val context = StringBuilder()
         general.forEach { context.appendLine("[General · ${it.chunk.publisher}] ${it.chunk.contentText}") }

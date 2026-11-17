@@ -4,18 +4,16 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Kotlin view of the on-device LLM runtime, `libmsr_engine`. Each member maps to one call
- * of its C API in `msr_engine/native/include/msr/engine/engine.h`. The runtime supports one
- * engine per process and one generation at a time (`msr_engine/LIMITATION.md`, B3/B6).
- *
- * [FakeEngine] implements this without a model, for emulators and UI work. The real
- * implementation calls the C API through JNI.
+ * Kotlin view of the on-device LLM runtime. [NativeEngine] implements it over JNI: streamed
+ * through `libmsr_engine` (`msr_engine/native/include/msr/engine/engine.h`) on mid-tier phones,
+ * or held in memory with llama.cpp + mtmd (images) where the phone has the RAM. One engine per
+ * process and one generation at a time (`msr_engine/LIMITATION.md`, B3/B6).
  */
 interface Engine : AutoCloseable {
-    /** True for [FakeEngine]. The UI must label simulated text and stats as simulated. */
-    val isSimulated: Boolean
-
     val state: StateFlow<EngineState>
+
+    /** True once a model with a vision projector is loaded in memory. */
+    val supportsImages: Boolean
 
     /**
      * `msr_engine_load`: opens the model and binds its weights to the bounded arena.
@@ -27,9 +25,9 @@ interface Engine : AutoCloseable {
     suspend fun load(config: EngineConfig)
 
     /**
-     * `msr_engine_generate`: emits text pieces as the model produces them. The prompt is
-     * wrapped in the model's chat template by the engine. A [temperature] of 0 or less
-     * means greedy decoding; [seed] only matters when sampling.
+     * Emits text pieces as the model produces them. The prompt is wrapped in the model's chat
+     * template by the engine. A [temperature] of 0 or less means greedy decoding; [seed] only
+     * matters when sampling. [imagePath] attaches one photo; only when [supportsImages].
      *
      * The flow completes normally when the reply ends, when [maxTokens] is reached, or
      * after [cancel] (`MSR_ABORTED`). Cancelling the collecting coroutine also stops
@@ -44,6 +42,7 @@ interface Engine : AutoCloseable {
         maxTokens: Int,
         temperature: Float = 0f,
         seed: Int = 42,
+        imagePath: String? = null,
     ): Flow<String>
 
     /** `msr_engine_cancel`: stops the running generation. Safe from any thread; no-op when idle. */
@@ -67,6 +66,10 @@ interface Engine : AutoCloseable {
  */
 data class EngineConfig(
     val modelPath: String,
+    /** Vision projector (mmproj). Only used by the in-memory runtime. */
+    val visionPath: String? = null,
+    /** Stream weights through msr_engine's bounded arena instead of holding them in memory. */
+    val streamed: Boolean = true,
     val budgetBytes: Long = 1024L shl 20,
     val contextTokens: Int = 2048,
     val threads: Int = 4,

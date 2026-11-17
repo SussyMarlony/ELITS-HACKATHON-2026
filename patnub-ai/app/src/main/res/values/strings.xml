@@ -6,12 +6,10 @@
     <string name="engine_ready">Engine ready</string>
     <string name="engine_generating">Engine generating</string>
     <string name="engine_failed">Engine failed to load</string>
-    <string name="engine_simulated">SIMULATED</string>
     <string name="status_private">Private · works offline</string>
     <string name="status_thinking">Thinking…</string>
     <string name="engine_details">On-device AI</string>
     <string name="engine_details_body">Your questions are answered on this phone. Nothing is sent over the internet.</string>
-    <string name="engine_simulated_long">SIMULATED: the medical model is not installed on this phone yet. Answers come from your saved sources.</string>
     <string name="engine_row_status">Status</string>
     <string name="engine_row_memory">Memory</string>
     <string name="engine_row_layers">Model layers</string>
@@ -87,8 +85,7 @@
     <string name="ask_prescriber">Please don’t change how you take your medicine without asking the clinician who prescribed it. Contact your clinic. If you feel very unwell, get care now.</string>
     <string name="ask_prescriber_named">Please don’t change how you take your medicine without asking %1$s, who prescribed it. Contact your clinic. If you feel very unwell, get care now.</string>
     <string name="no_match">I couldn’t find this in the reviewed sources or your records, so I won’t guess. Please ask your clinician.</string>
-    <string name="answer_simulated">SIMULATED · not from the medical model</string>
-    <string name="answer_fallback">From your saved sources (the AI model is not running)</string>
+    <string name="answer_fallback">From your saved sources · the AI model is not installed yet</string>
     <string name="answer_disclaimer">Information only, not a diagnosis.</string>
 
     <string name="med_search">Search a medicine</string>
@@ -131,4 +128,33 @@
     <string name="visits_clarify">Questions to clarify</string>
     <string name="visits_saved">Saved</string>
     <string name="visits_delete">Delete</string>
+
+    <string name="engine_no_model">No AI model on this phone yet. Answers come from your saved sources.</string>
+    <string name="engine_manage">Manage AI model</string>
+    <string name="assistant_install_model">Install the AI model for fuller answers and photo questions.</string>
+    <string name="assistant_needs_model">Photo questions need an AI model that reads photos. Open Manage AI model to install one.</string>
+    <string name="assistant_photo">Photo</string>
+    <string name="assistant_photo_attached">Photo attached</string>
+    <string name="assistant_remove_photo">Remove photo</string>
+    <string name="models_title">AI model</string>
+    <string name="models_phone">This phone has %1$s of memory. Recommended: %2$s.</string>
+    <string name="models_recommended">Recommended</string>
+    <string name="models_installed">Installed</string>
+    <string name="models_photos">Reads photos</string>
+    <string name="models_too_heavy">May be too heavy for this phone and could close the app.</string>
+    <string name="models_install">Install</string>
+    <string name="models_size">Download size %1$s. Free space %2$s. Use Wi-Fi if you can.</string>
+    <string name="models_agree">I accept the %1$s for this model.</string>
+    <string name="models_read_license">Read the terms</string>
+    <string name="models_download">Download</string>
+    <string name="models_import">Import files from this phone</string>
+    <string name="models_import_hint">Already have the files (USB, SD card)? Pick: %1$s</string>
+    <string name="models_downloading">Downloading…</string>
+    <string name="models_verifying">Checking the files…</string>
+    <string name="models_ready">Installed and checked. Ready to use offline.</string>
+    <string name="models_delete">Remove from this phone</string>
+    <string name="models_restart_needed">Another model is running. Restart patnub to switch.</string>
+    <string name="models_restart">Restart patnub</string>
+    <string name="models_load_failed">The model could not start: %1$s</string>
+    <string name="models_privacy">The model runs on this phone. After download, nothing you ask or photograph leaves the phone.</string>
 </resources>

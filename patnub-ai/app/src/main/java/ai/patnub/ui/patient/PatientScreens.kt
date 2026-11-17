@@ -53,10 +53,18 @@ class PatientServices(
 )
 
 @Composable
-fun PatientScreen(tab: PatientTab, services: PatientServices?, chat: ChatState, onTab: (PatientTab) -> Unit, modifier: Modifier = Modifier) {
+fun PatientScreen(
+    tab: PatientTab,
+    services: PatientServices?,
+    chat: ChatState,
+    modelReady: Boolean,
+    onManageModel: () -> Unit,
+    onTab: (PatientTab) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     when {
         services == null -> PlaceholderPane(title = tab.label, body = tab.description, modifier = modifier)
-        tab == PatientTab.Assistant -> AssistantScreen(chat, services.assistant, services.selfId, modifier)
+        tab == PatientTab.Assistant -> AssistantScreen(chat, services.assistant, services.selfId, modelReady, onManageModel, modifier)
         tab == PatientTab.Records -> RecordsScreen(services.db, services.selfId, onScan = { onTab(PatientTab.Scan) }, modifier = modifier)
         tab == PatientTab.Scan -> ScanScreen(services.checkInCode, services.importer, onSaved = { onTab(PatientTab.Records) }, modifier = modifier)
         tab == PatientTab.Medicines -> MedicinesScreen(services.db, services.selfId, modifier)

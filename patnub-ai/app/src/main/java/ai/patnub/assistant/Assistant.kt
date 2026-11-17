@@ -22,8 +22,11 @@ sealed interface Reply {
     /** Nothing close in reviewed sources: do not guess (Spec §4.3). */
     data object NoMatch : Reply
 
-    /** [text] streams pieces. [simulated] when the engine is FakeEngine; [fallback] when no model ran. */
-    data class Answer(val text: Flow<String>, val sources: List<Source>, val simulated: Boolean, val fallback: Boolean) : Reply
+    /** A photo question while no model that reads photos is loaded. */
+    data object NeedsModel : Reply
+
+    /** [text] streams pieces. [fallback] when no model ran and the text comes from the sources. */
+    data class Answer(val text: Flow<String>, val sources: List<Source>, val fallback: Boolean) : Reply
 }
 
 /**
@@ -33,8 +36,13 @@ sealed interface Reply {
  */
 class Assistant(private val db: PatnubDatabase, private val engine: Engine) {
 
-    /** [selfId] is the phone owner. It is never taken from the question text. */
-    suspend fun ask(question: String, selfId: String): Reply {
+    val supportsImages: Boolean get() = engine.state.value.let { it == EngineState.Ready || it == EngineState.Generating } && engine.supportsImages
+
+    /**
+     * [selfId] is the phone owner. It is never taken from the question text.
+     * [imagePath] is an optional photo, used only when [supportsImages].
+     */
+    suspend fun ask(question: String, selfId: String, imagePath: String? = null): Reply {
         RedFlagGate.check(question)?.let { return Reply.Emergency(it) }
 
         val records = db.clinicalRecordDao().getConsentedIssued(selfId)
@@ -50,24 +58,30 @@ class Assistant(private val db: PatnubDatabase, private val engine: Engine) {
             .sortedByDescending { it.second }
             .take(2)
             .map { it.first }
-        if (general.isEmpty() && personal.isEmpty()) return Reply.NoMatch
+        if (imagePath != null && !supportsImages) return Reply.NeedsModel
+        // A photo question can stand on its own; a text question needs a reviewed source.
+        if (imagePath == null && general.isEmpty() && personal.isEmpty()) return Reply.NoMatch
 
         val sources = general.map { Source(it.chunk.publisher, fromClinician = false) } +
             personal.map { Source(clinicianLabel(it), fromClinician = true) }
         val fallbackText = fallback(general, personal)
 
         if (engine.state.value != EngineState.Ready) {
-            return Reply.Answer(flowOf(fallbackText), sources, engine.isSimulated, fallback = true)
+            return Reply.Answer(flowOf(fallbackText), sources, fallback = true)
         }
-        val stream = engine.generate(PromptBuilder.build(question, general, personal), maxTokens = 96)
-            .catch { e -> if (e is EngineException) emit(fallbackText) else throw e }
-        return Reply.Answer(stream, sources, engine.isSimulated, fallback = false)
+        val prompt = PromptBuilder.build(question, general, personal, withImage = imagePath != null)
+        val stream = engine.generate(prompt, maxTokens = MAX_TOKENS, imagePath = imagePath)
+            .catch { e -> if (e is EngineException && fallbackText.isNotBlank()) emit(fallbackText) else throw e }
+        return Reply.Answer(stream, sources, fallback = false)
     }
 
     private suspend fun clinicianLabel(r: ClinicalRecordEntity): String =
         db.userDao().getById(r.clinicianId)?.let { "${it.displayName} · ${r.encounterDate}" } ?: "Your clinician · ${r.encounterDate}"
 
     companion object {
+        /** Short answers: ~10 s on a mid-tier phone streaming at 3 tok/s, ~3 s fully in memory. */
+        const val MAX_TOKENS = 128
+
         fun recordText(r: ClinicalRecordEntity) = listOfNotNull(
             r.assessment, r.meds.joinToString { "${it.name} ${it.dose} ${it.frequency}" },
             r.instructions.joinToString(" "), r.warnings.joinToString(" "), r.followUp,

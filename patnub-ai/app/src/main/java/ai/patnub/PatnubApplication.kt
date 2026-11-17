@@ -1,13 +1,15 @@
 package ai.patnub
 
+import ai.patnub.assistant.Assistant
 import ai.patnub.data.local.PatnubDatabase
 import ai.patnub.data.local.seedDemoData
 import ai.patnub.engine.Engine
 import ai.patnub.engine.EngineConfig
 import ai.patnub.engine.EngineException
-import ai.patnub.engine.FakeEngine
+import ai.patnub.engine.EngineState
+import ai.patnub.engine.NativeEngine
 import ai.patnub.identity.PatientIdentity
-import ai.patnub.assistant.Assistant
+import ai.patnub.models.ModelStore
 import ai.patnub.transfer.RecordImporter
 import android.app.Application
 import android.util.Log
@@ -18,7 +20,7 @@ import kotlinx.coroutines.launch
 
 class PatnubApplication : Application() {
     /** App-lifetime scope for work that must outlive any single screen. */
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /** One database instance per process. Opened on first use. */
     val database: PatnubDatabase by lazy { PatnubDatabase.create(this) }
@@ -28,32 +30,48 @@ class PatnubApplication : Application() {
 
     val importer: RecordImporter by lazy { RecordImporter(database, identity) }
     val assistant: Assistant by lazy { Assistant(database, engine) }
+    val models: ModelStore by lazy { ModelStore(this) }
 
-    /**
-     * One engine per process, loaded once at startup so requests don't pay the load cost.
-     * Replace FakeEngine with the JNI-backed engine when libmsr_engine is available.
-     */
-    val engine: Engine by lazy { FakeEngine() }
+    /** One engine per process (msr_engine's provider is a singleton). Loads once a model is installed. */
+    val engine: Engine by lazy { NativeEngine() }
+
+    /** Id of the package loaded into [engine] in this process, if any. */
+    @Volatile var loadedPackageId: String? = null
+        private set
 
     override fun onCreate() {
         super.onCreate()
+        models.refresh()
         appScope.launch {
             database.seedDemoData()
             identity.load()
         }
+        startModel()
+    }
+
+    /** Loads the selected model if it is installed and nothing is loaded yet. Safe to call again. */
+    fun startModel() {
+        val p = models.selected
+        if (!models.isReady(p) || engine.state.value != EngineState.Unloaded) return
         appScope.launch {
             try {
-                engine.load(EngineConfig(modelPath = MODEL_PATH))
+                engine.load(
+                    EngineConfig(
+                        modelPath = models.fileFor(p.main).path,
+                        visionPath = p.vision?.let { models.fileFor(it).path },
+                        streamed = p.streamed,
+                        budgetBytes = p.budgetBytes,
+                        threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 4),
+                    ),
+                )
+                loadedPackageId = p.id
             } catch (e: EngineException) {
-                Log.e(TAG, "Engine failed to load", e)
+                Log.e(TAG, "Model failed to load", e)
             }
         }
     }
 
     private companion object {
         const val TAG = "PatnubApplication"
-
-        // Location used on the reference device (build plan Phase 1).
-        const val MODEL_PATH = "/storage/emulated/0/Download/gemma/medgemma-1.5-4b-it.Q4_K_M.gguf"
     }
 }

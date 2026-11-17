@@ -1,5 +1,6 @@
 package ai.patnub
 
+import ai.patnub.ui.ModelHost
 import ai.patnub.ui.PatnubApp
 import ai.patnub.ui.patient.PatientServices
 import ai.patnub.ui.theme.PatnubTheme
@@ -15,7 +16,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             PatnubTheme {
                 val app = application as PatnubApplication
-                PatnubApp(app.engine, app.identity) { selfId, code ->
+                PatnubApp(app.engine, app.identity, ModelHost(app.models, { app.loadedPackageId }, app::startModel)) { selfId, code ->
                     PatientServices(app.database, app.importer, app.assistant, selfId, code)
                 }
             }

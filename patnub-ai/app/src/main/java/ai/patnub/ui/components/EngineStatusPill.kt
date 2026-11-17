@@ -33,7 +33,7 @@ private const val POLL_MS = 2_000L
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EngineStatusPill(engine: Engine, modifier: Modifier = Modifier) {
+fun EngineStatusPill(engine: Engine, onManage: () -> Unit, modifier: Modifier = Modifier) {
     val state by engine.state.collectAsState()
     var open by remember { mutableStateOf(false) }
 
@@ -44,12 +44,14 @@ fun EngineStatusPill(engine: Engine, modifier: Modifier = Modifier) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     if (open) {
-        ModalBottomSheet(onDismissRequest = { open = false }) { EngineDetails(engine, state) }
+        ModalBottomSheet(onDismissRequest = { open = false }) {
+            EngineDetails(engine, state, onManage = { open = false; onManage() })
+        }
     }
 }
 
 @Composable
-private fun EngineDetails(engine: Engine, state: EngineState) {
+private fun EngineDetails(engine: Engine, state: EngineState, onManage: () -> Unit) {
     val stats by produceState<EngineStats?>(null, state) {
         // Stats only exist while a model is loaded; poll so memory and speed stay live.
         while (state is EngineState.Ready || state is EngineState.Generating) {
@@ -60,8 +62,8 @@ private fun EngineDetails(engine: Engine, state: EngineState) {
     Column(Modifier.padding(start = 24.dp, end = 24.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(stringResource(R.string.engine_details), style = MaterialTheme.typography.titleLarge)
         Text(stringResource(R.string.engine_details_body), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (engine.isSimulated) {
-            Text(stringResource(R.string.engine_simulated_long), color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+        if (state == EngineState.Unloaded || state is EngineState.Failed) {
+            Text(stringResource(R.string.engine_no_model), fontWeight = FontWeight.SemiBold)
         }
         val status = when (state) {
             EngineState.Unloaded -> R.string.engine_offline
@@ -73,9 +75,12 @@ private fun EngineDetails(engine: Engine, state: EngineState) {
         Row2(stringResource(R.string.engine_row_status), stringResource(status))
         stats?.let { st ->
             st.vmRssKb?.let { Row2(stringResource(R.string.engine_row_memory), "${it / 1024} MiB") }
-            Row2(stringResource(R.string.engine_row_layers), "${st.streamedLayers} streamed · ${st.budgetBytes shr 20} MiB budget")
+            if (st.budgetBytes > 0) Row2(stringResource(R.string.engine_row_layers), "${st.streamedLayers} streamed · ${st.budgetBytes shr 20} MiB budget")
             if (st.generatedTokens > 0) Row2(stringResource(R.string.engine_row_speed), "%.1f tok/s · first token %d ms".format(st.generateTokensPerSecond, st.ttftMs))
             st.thermalC?.let { Row2(stringResource(R.string.engine_row_temp), "$it °C") }
+        }
+        androidx.compose.material3.Button(onClick = onManage, modifier = Modifier.padding(top = 8.dp)) {
+            Text(stringResource(R.string.engine_manage))
         }
     }
 }
