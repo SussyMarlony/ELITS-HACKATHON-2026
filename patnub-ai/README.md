@@ -31,7 +31,9 @@ Requires JDK 17+ (Android Studio's bundled JDK works) and Android SDK platform 3
 ```
 app/src/main/java/ai/patnub/
   MainActivity.kt              entry point, edge-to-edge, sets the Compose theme
-  PatnubApplication.kt         owns the database instance, seeds demo users on launch
+  PatnubApplication.kt         owns the database and engine instances, seeds demo users, loads the engine
+  engine/Engine.kt             Kotlin interface mirroring the libmsr_engine C API
+  engine/FakeEngine.kt         simulated engine used until the real library is available
   data/local/PatnubDatabase.kt Room database (patnub_local.db), 8 tables
   data/local/entity/           one entity per table, plus shared enums
   data/local/dao/              type-safe queries (DAOs)
@@ -59,11 +61,23 @@ Tables and columns match the build plan's Phase 1 schema, so its SQL examples wo
 - Schema changes need a version bump and a migration. Each build writes the schema JSON
   for the current version under `app/schemas/`.
 
+## Engine
+
+`Engine` mirrors the `libmsr_engine` C API (`../ravin/sdk/tools/msr_cli.cpp`): load,
+streamed generate, cancel, stats and close. The app currently uses `FakeEngine`, because
+the engine's source (`ravin/native/`, the llama.cpp submodule and its patch) is not in this
+repo yet. `FakeEngine` never reads a model file. It streams placeholder text at the measured
+3.00 tok/s and reports Ravin's measured 1 GiB numbers as stats. `Engine.isSimulated` is true
+for it, and the UI must say so wherever it shows engine output or stats.
+
+To switch to the real engine, add a JNI-backed `Engine` implementation and change the one
+line in `PatnubApplication` that creates `FakeEngine`.
+
 ## Current state
 
 Every screen is still a placeholder. The database exists and is seeded with the four
-demo accounts, but no screen reads from it yet. Next Phase 1 step: the `libmsr_engine`
-bridge and the live telemetry pill in the top bar.
+demo accounts, and the simulated engine loads at startup, but no screen uses either yet.
+Next Phase 1 step: the telemetry pill in the top bar.
 
 ## Privacy defaults
 
