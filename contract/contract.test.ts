@@ -66,3 +66,13 @@ test('vectors.json opens with this implementation', async () => {
   await assert.rejects(openRecord(v.record_qr, unb64u(v.root_pub), keyFromJson(v.other_patient), v.now), (e) => code(e) === 'NOT_FOR_THIS_PHONE');
   assert.equal(encodeCheckIn(v.check_in), v.check_in_text);
 });
+
+test('QR text carries no readable health information (spec §12 check 5)', async () => {
+  const f = await makeFixture({ iat: T });
+  const raw = new TextDecoder('latin1').decode(base45Decode(f.qr.slice(RECORD_PREFIX.length)));
+  for (const secret of [f.record.assessment, 'Amlodipine', 'Severe headache', 'salt']) {
+    assert.ok(!raw.includes(secret), `"${secret}" visible in QR bytes`);
+  }
+  // Only clinic and clinician identity (needed to verify offline) are readable.
+  assert.ok(raw.includes('RHU San Isidro'));
+});

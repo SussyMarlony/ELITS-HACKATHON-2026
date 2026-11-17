@@ -44,7 +44,10 @@ class RecordImporter(private val db: PatnubDatabase, private val identity: Patie
             private.fill(0)
         }
         val existing = db.clinicalRecordDao().getById(opened.record.rid)
-        if (existing != null && existing.version >= opened.record.rv) return ScanOutcome.Rejected(RejectReason.ALREADY_SAVED)
+        if (ImportPolicy.decide(existing?.version, opened.record.rv) == ImportPolicy.Decision.ALREADY_SAVED) {
+            audit("QR_REJECTED", opened.record.rid, RejectReason.ALREADY_SAVED.name)
+            return ScanOutcome.Rejected(RejectReason.ALREADY_SAVED)
+        }
         return ScanOutcome.Preview(opened, existing?.version)
     }
 

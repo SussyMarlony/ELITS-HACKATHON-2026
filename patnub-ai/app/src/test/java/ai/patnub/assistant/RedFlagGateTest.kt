@@ -25,3 +25,15 @@ class RedFlagGateTest {
         assertNotNull(RedFlagGate.check("I CAN’T BREATHE"))
     }
 }
+
+class RedFlagGateTimingTest {
+    /** Spec §12 check 3: the gate must answer in well under 20 ms. */
+    @Test fun underTwentyMilliseconds() {
+        val q = "I've had a headache for two days and feel dizzy when I stand up, and now chest pain"
+        repeat(200) { RedFlagGate.check(q) } // warm up
+        val start = System.nanoTime()
+        repeat(1_000) { RedFlagGate.check(q) }
+        val perCallMs = (System.nanoTime() - start) / 1_000.0 / 1_000_000.0
+        org.junit.Assert.assertTrue("took $perCallMs ms", perCallMs < 20.0)
+    }
+}

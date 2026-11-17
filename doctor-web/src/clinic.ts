@@ -5,11 +5,11 @@ import {
 } from '../../contract/contract.ts';
 import rootPubText from '../../contract/demo/root_pub.txt?raw';
 import type { Draft } from './draft.ts';
+import { patientCopy, RECORD_TTL_S } from './issue.ts';
 import { MIN_PASSCODE, unwrapSecret, wrapSecret } from './passcode.ts';
 import { all, audit, byPatient, dumpAll, get, put, restoreAll, type ClinicRecord, type License, type Patient, type Staff } from './store.ts';
 
 const ROOT_PUB = unb64u(rootPubText.trim());
-const RECORD_TTL_S = 24 * 3600; // QR scan window (spec §4.6.1)
 const now = () => Math.floor(Date.now() / 1000);
 
 export interface Session {
@@ -155,21 +155,14 @@ export interface IssueInput {
   note: string;
   draft: Draft;
   encounter_date: string;
+  approved: boolean;
   /** Set when correcting an issued record: same rid, next version. */
   previous?: ClinicRecord;
 }
 
 export async function issue(s: Session, license: License, input: IssueInput): Promise<ClinicRecord> {
   if (!licenseActive(license)) throw new Error('The clinic license has expired. Renew it to issue records.');
-  const t = now();
-  const copy: PatientCopy = {
-    rid: input.previous?.rid ?? crypto.randomUUID(),
-    rv: (input.previous?.rv ?? 0) + 1,
-    iat: t,
-    exp: t + RECORD_TTL_S,
-    encounter_date: input.encounter_date,
-    ...input.draft,
-  };
+  const copy = patientCopy(input, now(), () => crypto.randomUUID());
   const record: ClinicRecord = {
     key: `${copy.rid}:${copy.rv}`,
     rid: copy.rid,
@@ -206,6 +199,16 @@ function seal(s: Session, license: License, copy: PatientCopy, patientPub: strin
     staffKey: s.key,
     patientPub: unb64u(patientPub),
     record: copy,
+  });
+}
+
+/** Demo reset: wipes this device's clinic data. The page reloads into license activation. */
+export async function eraseDevice(): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const req = indexedDB.deleteDatabase('patnub-clinic');
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => resolve(); // other tabs hold it open; deletion finishes when they close
   });
 }
 

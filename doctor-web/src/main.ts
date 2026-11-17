@@ -2,7 +2,7 @@ import jsQR from 'jsqr';
 import qrcode from 'qrcode-generator';
 import type { KeyPair } from '../../contract/contract.ts';
 import {
-  activateLicense, checkClinician, createClinician, exportBackup, getLicense, importBackup, issue, licenseActive,
+  activateLicense, checkClinician, createClinician, eraseDevice, exportBackup, getLicense, importBackup, issue, licenseActive,
   listPatients, listStaff, qrValid, readCheckIn, recordsFor, reissue, savePatient, setDisabled, signIn,
   type CheckInResult, type Session,
 } from './clinic.ts';
@@ -233,6 +233,11 @@ function viewAdmin() {
     <p>Everything lives only in this browser. Save an encrypted backup to a USB stick regularly. It is locked with your passcode.</p>
     <form data-form="export"><label>Your passcode<input name="passcode" type="password" required></label><button class="btn btn-primary">Download backup</button></form>
     <details><summary>Restore a backup (replaces everything on this device)</summary>${backupImportForm()}</details>
+  </div>
+  <div class="card">
+    <h2>Erase this device</h2>
+    <p>Deletes the license, clinicians, patients and records from this browser. Use it to reset between demos. Make a backup first if you need the data.</p>
+    <button class="btn danger" data-action="erase">Erase everything</button>
   </div>`;
 }
 
@@ -334,7 +339,7 @@ app.addEventListener('submit', (ev) => {
     case 'approve': return run(async () => {
       st.draft = readDraft(form);
       st.encounterDate = f('encounter_date');
-      st.shown = await issue(st.session!, st.license!, { patient: st.selected!, note: st.note, draft: st.draft, encounter_date: st.encounterDate, previous: st.previous });
+      st.shown = await issue(st.session!, st.license!, { patient: st.selected!, note: st.note, draft: st.draft, encounter_date: st.encounterDate, approved: f('ok') === 'on', previous: st.previous });
       st.previous = undefined;
       st.stage = 'qr';
     });
@@ -387,6 +392,9 @@ app.addEventListener('click', (ev) => {
       await setDisabled(x, !x.disabled, actor());
     });
     case 'scan': return void startScan();
+    case 'erase':
+      if (!confirm('Erase all clinic data on this device? This cannot be undone.')) return;
+      return void eraseDevice().then(() => location.reload());
     case 'checkin-cancel': st.pendingCheckIn = undefined; return render();
     case 'checkin-separate': {
       const c = st.pendingCheckIn as Extract<CheckInResult, { kind: 'new-phone' }>;

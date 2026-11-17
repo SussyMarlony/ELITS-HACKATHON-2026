@@ -93,3 +93,4 @@ legend { font-size: 14px; font-weight: 600; padding: 0 6px; }
   .layout, .qr-wrap, .grid2 { grid-template-columns: 1fr; }
   .med { grid-template-columns: 1fr 1fr; }
 }
+.danger { color: var(--danger); border-color: var(--danger); }
