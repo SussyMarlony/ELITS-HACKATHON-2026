@@ -39,6 +39,12 @@ class NativeEngine : Engine {
         if (!(current == EngineState.Unloaded || current is EngineState.Failed) || !_state.compareAndSet(current, EngineState.Loading)) {
             throw EngineException(EngineError.MODEL_ERROR, "model already loaded")
         }
+        if (!cpuSupported) {
+            // Without this check the first matrix multiply kills the app (SIGILL), with no error shown.
+            val err = EngineException(EngineError.MODEL_ERROR, CPU_UNSUPPORTED)
+            _state.value = EngineState.Failed(err)
+            throw err
+        }
         try {
             handle = withContext(Dispatchers.IO) {
                 nativeLoad(
@@ -88,12 +94,21 @@ class NativeEngine : Engine {
             }
         }
         val worker = thread(name = "patnub-llm", isDaemon = true) {
-            val rc = nativeGenerate(h, prompt, imagePath, raw, maxTokens, temperature, seed, sink)
+            // An exception here (for example one thrown in onToken and rethrown by JNI) would be
+            // uncaught on a raw thread and kill the whole app; fail this answer instead.
+            var failure: Throwable? = null
+            val rc = try {
+                nativeGenerate(h, prompt, imagePath, raw, maxTokens, temperature, seed, sink)
+            } catch (e: Throwable) {
+                failure = e
+                -1
+            }
             generating.set(false)
             if (_state.value == EngineState.Generating) _state.value = EngineState.Ready
-            when (rc) {
-                0, 7 -> close() // done, or cancelled: the flow completes normally
-                1 -> close(EngineException(EngineError.INVALID_ARGUMENT, nativeLastError(h)))
+            when {
+                failure != null -> close(EngineException(EngineError.INTERNAL_ERROR, failure.message ?: "generation failed"))
+                rc == 0 || rc == 7 -> close() // done, or cancelled: the flow completes normally
+                rc == 1 -> close(EngineException(EngineError.INVALID_ARGUMENT, nativeLastError(h)))
                 else -> close(EngineException(EngineError.INTERNAL_ERROR, nativeLastError(h)))
             }
         }
@@ -107,8 +122,9 @@ class NativeEngine : Engine {
         try {
             withContext(Dispatchers.IO) { nativePrefill(h, text) }
         } finally {
-            prefilling.set(false)
+            // Clear generating first: generate() waits for prefilling to drop, then claims generating.
             generating.set(false)
+            prefilling.set(false)
         }
     }
 
@@ -144,6 +160,15 @@ class NativeEngine : Engine {
         init {
             System.loadLibrary("patnub_llm")
         }
+
+        private const val CPU_UNSUPPORTED =
+            "this phone's processor lacks the ARMv8.2 dot-product instructions the AI model is built for " +
+                "(Cortex-A53/A57/A72/A73 cores). Answers come from your saved sources."
+
+        @JvmStatic private external fun nativeCpuSupported(): Boolean
+
+        /** False on phones whose CPU can't run the model build (no ARMv8.2 dot product). */
+        val cpuSupported: Boolean by lazy { nativeCpuSupported() }
 
         @JvmStatic private external fun nativeLoad(
             model: String, vision: String?, streamed: Boolean, budget: Long,

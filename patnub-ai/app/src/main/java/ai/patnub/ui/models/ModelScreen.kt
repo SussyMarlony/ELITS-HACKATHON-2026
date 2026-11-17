@@ -2,6 +2,7 @@ package ai.patnub.ui.models
 
 import ai.patnub.R
 import ai.patnub.engine.EngineState
+import ai.patnub.engine.NativeEngine
 import ai.patnub.models.InstallState
 import ai.patnub.models.ModelCatalog
 import ai.patnub.models.ModelPackage
@@ -88,6 +89,9 @@ fun ModelScreen(
             stringResource(R.string.models_phone, gb(store.totalRamBytes), recommended.title),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (!NativeEngine.cpuSupported) {
+            Text(stringResource(R.string.models_cpu_unsupported), color = MaterialTheme.colorScheme.error)
+        }
 
         ModelCatalog.packages.forEach { p ->
             PackageRow(

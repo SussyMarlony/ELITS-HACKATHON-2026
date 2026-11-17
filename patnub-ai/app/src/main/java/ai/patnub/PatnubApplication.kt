@@ -5,7 +5,6 @@ import ai.patnub.data.local.PatnubDatabase
 import ai.patnub.data.local.BundledContent
 import ai.patnub.engine.Engine
 import ai.patnub.engine.EngineConfig
-import ai.patnub.engine.EngineException
 import ai.patnub.engine.EngineState
 import ai.patnub.engine.CpuInfo
 import ai.patnub.engine.NativeEngine
@@ -56,6 +55,7 @@ class PatnubApplication : Application() {
         val p = models.selected
         if (!models.isReady(p) || engine.state.value != EngineState.Unloaded) return
         appScope.launch {
+            // appScope has no exception handler: anything uncaught here would kill the app.
             try {
                 engine.load(
                     EngineConfig(
@@ -68,9 +68,15 @@ class PatnubApplication : Application() {
                     ),
                 )
                 loadedPackageId = p.id
-                assistant.prewarm()
-            } catch (e: EngineException) {
+            } catch (e: Exception) {
                 Log.e(TAG, "Model failed to load", e)
+                return@launch
+            }
+            try {
+                assistant.prewarm()
+            } catch (e: Exception) {
+                // Only a speed-up; the first question just starts slower.
+                Log.e(TAG, "Model warm-up failed", e)
             }
         }
     }

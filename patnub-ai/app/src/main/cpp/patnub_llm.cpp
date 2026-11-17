@@ -30,6 +30,13 @@
 #include <mtmd-helper.h>
 #include <msr/msr_external_abi.h>
 
+#if defined(__aarch64__) && defined(__linux__)
+#include <sys/auxv.h>
+#ifndef HWCAP_ASIMDDP
+#define HWCAP_ASIMDDP (1 << 20)  // arm64 dot-product instructions (Linux uapi asm/hwcap.h)
+#endif
+#endif
+
 extern "C" void msr_streaming_cancel();
 
 #define TAG "patnub_llm"
@@ -285,6 +292,20 @@ int generate_resident(Bridge* b, const std::string& prompt, const std::string& i
 }  // namespace
 
 extern "C" {
+
+/**
+ * Whether this CPU can run the ggml build. The arm64 build is compiled for armv8.2-a+dotprod
+ * (CMakeLists.txt), so phones without dot-product instructions (Cortex-A53-only) would crash
+ * with SIGILL on the first matrix multiply. This function itself uses no such instructions.
+ */
+JNIEXPORT jboolean JNICALL
+Java_ai_patnub_engine_NativeEngine_nativeCpuSupported(JNIEnv*, jclass) {
+#if defined(__aarch64__) && defined(__linux__)
+    return (getauxval(AT_HWCAP) & HWCAP_ASIMDDP) != 0 ? JNI_TRUE : JNI_FALSE;
+#else
+    return JNI_TRUE;
+#endif
+}
 
 JNIEXPORT jlong JNICALL
 Java_ai_patnub_engine_NativeEngine_nativeLoad(JNIEnv* env, jclass, jstring jmodel, jstring jmmproj, jboolean streamed,

@@ -92,7 +92,10 @@ Biggest wins first:
 - [ ] msr_engine B1–B4 (`msr_engine/LIMITATION.md`): typed cancel status, per-engine `MSR_NO_ALLOC`,
       provider singleton (switching models restarts the app), node-name refill trigger.
 - [ ] Gemma 4 cannot be streamed (msr_engine patches the Gemma 3 graph only).
-- [ ] Phones with only Cortex-A53 cores are not supported (build needs dotprod).
+- [ ] Phones without ARMv8.2 dot product are not supported (build needs dotprod): Cortex-A53-only
+      phones and older big cores (A57/A72/A73), e.g. Helio P70 (OPPO CPH1969). Since the CPU check
+      in `NativeEngine.load` they get a clear "can't run the model" message instead of a SIGILL crash.
+      To run models there: a second `armv8-a` build of `libpatnub_llm.so` chosen at runtime.
 - [ ] Verify 16 KB page-size compatibility on an Android 15+ device.
 
 ## 7. Release
