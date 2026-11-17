@@ -6,6 +6,7 @@ import ai.patnub.engine.Engine
 import ai.patnub.engine.EngineConfig
 import ai.patnub.engine.EngineException
 import ai.patnub.engine.FakeEngine
+import ai.patnub.identity.PatientIdentity
 import android.app.Application
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
@@ -20,6 +21,9 @@ class PatnubApplication : Application() {
     /** One database instance per process. Opened on first use. */
     val database: PatnubDatabase by lazy { PatnubDatabase.create(this) }
 
+    /** The patient who owns this phone. */
+    val identity: PatientIdentity by lazy { PatientIdentity(this, database) }
+
     /**
      * One engine per process, loaded once at startup so requests don't pay the load cost.
      * Replace FakeEngine with the JNI-backed engine when libmsr_engine is available.
@@ -28,7 +32,10 @@ class PatnubApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        appScope.launch { database.seedDemoData() }
+        appScope.launch {
+            database.seedDemoData()
+            identity.load()
+        }
         appScope.launch {
             try {
                 engine.load(EngineConfig(modelPath = MODEL_PATH))

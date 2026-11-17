@@ -50,6 +50,7 @@ dependencies {
     ksp(libs.androidx.room3.compiler)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.tink.android)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

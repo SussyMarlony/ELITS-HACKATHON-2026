@@ -21,4 +21,12 @@
     <string name="placeholder_visits">Prepare questions before a visit, or write a recap after one.</string>
 
     <string name="coming_soon">Not built yet</string>
+
+    <string name="onboarding_title">Welcome</string>
+    <string name="onboarding_body">This phone keeps your health records for you, offline. Your clinic sees these details when you show your check-in code.</string>
+    <string name="onboarding_name">Full name</string>
+    <string name="onboarding_age">Age</string>
+    <string name="onboarding_barangay">Barangay (optional)</string>
+    <string name="onboarding_continue">Continue</string>
+    <string name="debug_reset">Reset (debug)</string>
 </resources>

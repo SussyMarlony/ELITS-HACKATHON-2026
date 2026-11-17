@@ -39,7 +39,9 @@ app/src/main/java/ai/patnub/
   data/local/entity/           one entity per table, plus shared enums
   data/local/dao/              type-safe queries (DAOs)
   data/local/Converters.kt     Instant, LocalDate and JSON list column conversions
-  data/local/SeedData.kt       demo accounts p1, p2, p3 (patients) and d1 (clinician)
+  data/local/SeedData.kt       demo knowledge passages (placeholders, not real DOH/WHO/PNF text)
+  identity/PatientIdentity.kt  the phone owner's profile and X25519 key pair (private key wrapped by Android Keystore)
+  ui/onboarding/               first-launch profile form
   ui/PatnubApp.kt              root Scaffold: top bar with engine status pill, bottom tabs (patient-only app; clinicians use ../doctor-web/)
   ui/patient/PatientScreens.kt the 5 Patient tabs (Assistant, Records, Scan, Medicines, Visits)
   ui/components/               shared composables
@@ -78,10 +80,10 @@ line in `PatnubApplication` that creates `FakeEngine`.
 
 ## Current state
 
-Every screen is still a placeholder. The database exists and is seeded with the four
-demo accounts, and the simulated engine loads at startup. The top bar shows a live engine status pill
-(`ui/components/EngineStatusPill.kt`: state, memory, tok/s, temperature, labelled SIMULATED
-while `FakeEngine` is in use). No other screen uses the database or engine yet.
+Patient-only app (spec v1.2). First launch asks for name, age and barangay, then creates the
+phone's key pair. Debug builds show a "Reset (debug)" button in the top bar that wipes the
+profile, keys and local data for demos. The top bar shows a live engine status pill
+(SIMULATED while `FakeEngine` is in use). Tabs are still placeholders.
 
 ## Privacy defaults
 

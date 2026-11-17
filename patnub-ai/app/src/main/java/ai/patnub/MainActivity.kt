@@ -13,7 +13,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             PatnubTheme {
-                PatnubApp((application as PatnubApplication).engine)
+                val app = application as PatnubApplication
+                PatnubApp(app.engine, app.identity)
             }
         }
     }
