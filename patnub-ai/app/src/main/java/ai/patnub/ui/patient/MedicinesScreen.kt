@@ -5,7 +5,10 @@ import ai.patnub.data.local.PatnubDatabase
 import ai.patnub.data.local.entity.MedicationReferenceEntity
 import ai.patnub.data.local.entity.UserRole
 import ai.patnub.medicines.MedicineMatcher
+import ai.patnub.ui.components.BulletList
 import ai.patnub.ui.components.CameraScanner
+import ai.patnub.ui.components.SectionCard
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -55,6 +58,7 @@ private sealed interface MedState {
 fun MedicinesScreen(db: PatnubDatabase, selfId: String, modifier: Modifier = Modifier) {
     val meds by remember { db.medicationReferenceDao().observeAll() }.collectAsState(initial = emptyList())
     var state by remember { mutableStateOf<MedState>(MedState.Browse) }
+    BackHandler(enabled = state != MedState.Browse) { state = MedState.Browse }
 
     when (val s = state) {
         MedState.Browse -> Browse(meds, onPick = { state = MedState.Detail(it, null, null) }, onScan = { state = MedState.Scanning }, modifier)
@@ -91,8 +95,8 @@ private fun Browse(meds: List<MedicationReferenceEntity>, onPick: (MedicationRef
         }
         item { Button(onClick = onScan, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.med_scan)) } }
         items(MedicineMatcher.search(query, meds), key = { it.medId }) { m ->
-            OutlinedCard(Modifier.fillMaxWidth().clickable { onPick(m) }) {
-                Column(Modifier.padding(14.dp)) {
+            Card(Modifier.fillMaxWidth().clickable { onPick(m) }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)) {
+                Column(Modifier.padding(16.dp)) {
                     Text(m.name + (m.alias?.let { " ($it)" } ?: ""), style = MaterialTheme.typography.titleMedium)
                     Text(m.drugClass, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -155,18 +159,13 @@ private fun Detail(db: PatnubDatabase, selfId: String, s: MedState.Detail, onBac
             }
         }
 
-        Section(stringResource(R.string.med_label), listOf(m.labelInstructions))
-        Section(stringResource(R.string.med_uses), m.uses)
-        Section(stringResource(R.string.med_side_effects), m.sideEffects)
-        Section(stringResource(R.string.med_warnings), m.warnings)
-        Section(stringResource(R.string.med_storage), listOf(m.storageText))
+        SectionCard(stringResource(R.string.med_label)) { Text(m.labelInstructions) }
+        SectionCard(stringResource(R.string.med_uses)) { BulletList(m.uses) }
+        SectionCard(stringResource(R.string.med_side_effects)) { BulletList(m.sideEffects) }
+        SectionCard(stringResource(R.string.med_warnings), titleColor = MaterialTheme.colorScheme.error) { BulletList(m.warnings) }
+        SectionCard(stringResource(R.string.med_storage)) { Text(m.storageText) }
         Text(stringResource(R.string.med_source, m.sourceCitation), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(stringResource(R.string.med_no_changes), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
-@Composable
-private fun Section(title: String, lines: List<String>) {
-    Text(title, fontWeight = FontWeight.Bold)
-    lines.forEach { Text("• $it") }
-}

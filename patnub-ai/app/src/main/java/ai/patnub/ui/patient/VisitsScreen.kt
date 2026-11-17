@@ -4,6 +4,8 @@ import ai.patnub.R
 import ai.patnub.data.local.PatnubDatabase
 import ai.patnub.data.local.entity.VisitItemEntity
 import ai.patnub.data.local.entity.VisitItemType
+import ai.patnub.ui.components.BulletList
+import ai.patnub.ui.components.SectionCard
 import ai.patnub.visits.PrepChecklist
 import ai.patnub.visits.Recap
 import ai.patnub.visits.VisitPlanner
@@ -153,8 +155,8 @@ private fun RecapCard(r: Recap) = OutlinedCard(Modifier.fillMaxWidth()) {
 @Composable
 private fun Lines(title: String, lines: List<String>) {
     if (lines.isEmpty()) return
-    Text(title, fontWeight = FontWeight.Bold)
-    lines.forEach { Text("• $it") }
+    Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    BulletList(lines)
 }
 
 @Composable
@@ -168,10 +170,9 @@ private fun Saved(db: PatnubDatabase, selfId: String, type: VisitItemType) {
         Column {
             if (type == VisitItemType.PREP) {
                 val c = json.decodeFromString(PrepChecklist.serializer(), body)
-                OutlinedCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(14.dp)) {
-                        Text(c.concern, fontWeight = FontWeight.Bold)
-                        c.questions.forEach { Text("☐ $it") }
+                SectionCard(c.concern) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        c.questions.forEach { Text("☐  $it") }
                     }
                 }
             } else {

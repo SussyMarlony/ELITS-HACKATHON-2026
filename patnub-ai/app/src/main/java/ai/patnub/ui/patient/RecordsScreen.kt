@@ -3,7 +3,8 @@ package ai.patnub.ui.patient
 import ai.patnub.R
 import ai.patnub.data.local.PatnubDatabase
 import ai.patnub.data.local.entity.UserRole
-import ai.patnub.ui.components.PlaceholderPane
+import ai.patnub.ui.components.EmptyState
+import androidx.compose.ui.res.stringResource
 import ai.patnub.ui.components.RecordCard
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,12 +19,18 @@ import androidx.compose.ui.unit.dp
 
 /** Timeline of clinician-approved records imported by QR, newest first. */
 @Composable
-fun RecordsScreen(db: PatnubDatabase, selfId: String, modifier: Modifier = Modifier) {
+fun RecordsScreen(db: PatnubDatabase, selfId: String, onScan: () -> Unit, modifier: Modifier = Modifier) {
     val records by remember(selfId) { db.clinicalRecordDao().observeIssued(selfId) }.collectAsState(initial = null)
     val clinicians by remember { db.userDao().observeByRole(UserRole.CLINICIAN) }.collectAsState(initial = emptyList())
     val list = records ?: return
     if (list.isEmpty()) {
-        PlaceholderPane(title = PatientTab.Records.label, body = R.string.placeholder_records, modifier = modifier)
+        EmptyState(
+            title = stringResource(R.string.records_empty_title),
+            body = stringResource(R.string.placeholder_records),
+            action = stringResource(R.string.scan_start),
+            onAction = onScan,
+            modifier = modifier,
+        )
         return
     }
     LazyColumn(modifier, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -32,7 +39,7 @@ fun RecordsScreen(db: PatnubDatabase, selfId: String, modifier: Modifier = Modif
             RecordCard(
                 assessment = r.assessment,
                 encounterDate = r.encounterDate.toString(),
-                approvedBy = c?.let { "${it.displayName}, ${it.specialty}, PRC ${it.prcLicenseNo} · ${it.facility}" } ?: r.clinicianId,
+                approvedBy = c?.let { "${it.displayName}, ${it.specialty} · ${it.facility}" } ?: r.clinicianId,
                 meds = r.meds, instructions = r.instructions, warnings = r.warnings,
                 followUp = r.followUp, version = r.version,
             )

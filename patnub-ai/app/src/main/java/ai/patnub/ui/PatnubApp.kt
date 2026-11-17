@@ -12,6 +12,10 @@ import ai.patnub.ui.components.LogoMark
 import ai.patnub.ui.patient.PatientNavigationBar
 import ai.patnub.ui.patient.PatientScreen
 import ai.patnub.ui.patient.PatientServices
+import ai.patnub.ui.patient.ChatState
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.imePadding
 import ai.patnub.ui.patient.PatientTab
 import ai.patnub.ui.theme.PatnubTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -53,6 +57,7 @@ fun PatnubApp(engine: Engine, identity: PatientIdentity?, makeServices: ((selfId
     // Preview has no identity; treat it as an onboarded phone.
     val profile = identity?.profile?.collectAsState()?.value ?: SelfProfile.Loading
     val scope = rememberCoroutineScope()
+    val chat = remember { ChatState(scope) }
     val checkInCode = remember(profile) {
         val user = (profile as? SelfProfile.Ready)?.user
         val pub = identity?.publicKey()
@@ -81,12 +86,17 @@ fun PatnubApp(engine: Engine, identity: PatientIdentity?, makeServices: ((selfId
             }
         },
     ) { innerPadding ->
+        // Back from another tab returns to the Assistant before leaving the app.
+        BackHandler(enabled = profile is SelfProfile.Ready && patientTab != PatientTab.Assistant) { patientTab = PatientTab.Assistant }
         val modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding)
+            // The keyboard pushes content up instead of covering inputs (chat box, forms).
+            .consumeWindowInsets(innerPadding)
+            .imePadding()
         when (profile) {
             SelfProfile.Missing -> OnboardingScreen(onCreate = { n, a, b -> identity!!.create(n, a, b) }, modifier = modifier)
-            else -> PatientScreen(tab = patientTab, services = services, onTab = { patientTab = it }, modifier = modifier)
+            else -> PatientScreen(tab = patientTab, services = services, chat = chat, onTab = { patientTab = it }, modifier = modifier)
         }
     }
 }

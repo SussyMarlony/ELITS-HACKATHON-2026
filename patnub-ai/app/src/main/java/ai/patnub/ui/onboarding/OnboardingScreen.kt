@@ -22,7 +22,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
@@ -51,16 +55,18 @@ fun OnboardingScreen(
         OutlinedTextField(
             value = name, onValueChange = { name = it }, singleLine = true,
             label = { Text(stringResource(R.string.onboarding_name)) }, modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
         )
         OutlinedTextField(
             value = age, onValueChange = { age = it }, singleLine = true,
             label = { Text(stringResource(R.string.onboarding_age)) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
             modifier = Modifier.fillMaxWidth(),
         )
         OutlinedTextField(
             value = barangay, onValueChange = { barangay = it }, singleLine = true,
             label = { Text(stringResource(R.string.onboarding_barangay)) }, modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
         )
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Button(
@@ -80,6 +86,10 @@ fun OnboardingScreen(
                     }
                 }
             },
-        ) { Text(stringResource(R.string.onboarding_continue)) }
+        ) {
+            if (saving) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+            else Text(stringResource(R.string.onboarding_continue))
+        }
+        Text(stringResource(R.string.onboarding_privacy), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

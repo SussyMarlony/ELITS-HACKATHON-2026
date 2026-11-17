@@ -7,6 +7,16 @@
     <string name="engine_generating">Engine generating</string>
     <string name="engine_failed">Engine failed to load</string>
     <string name="engine_simulated">SIMULATED</string>
+    <string name="status_private">Private · works offline</string>
+    <string name="status_thinking">Thinking…</string>
+    <string name="engine_details">On-device AI</string>
+    <string name="engine_details_body">Your questions are answered on this phone. Nothing is sent over the internet.</string>
+    <string name="engine_simulated_long">SIMULATED: the medical model is not installed on this phone yet. Answers come from your saved sources.</string>
+    <string name="engine_row_status">Status</string>
+    <string name="engine_row_memory">Memory</string>
+    <string name="engine_row_layers">Model layers</string>
+    <string name="engine_row_speed">Speed</string>
+    <string name="engine_row_temp">Temperature</string>
 
     <string name="tab_assistant">Assistant</string>
     <string name="tab_records">Records</string>
@@ -15,7 +25,8 @@
     <string name="tab_visits">Visits</string>
 
     <string name="placeholder_assistant">Ask health questions. Answers will come from reviewed DOH/PNF sources and your doctor\'s approved records.</string>
-    <string name="placeholder_records">Your doctor-approved visit records will appear here.</string>
+    <string name="placeholder_records">When your clinic gives you a QR code after a visit, scan it and the record is saved here, on this phone.</string>
+    <string name="records_empty_title">No records yet</string>
     <string name="placeholder_scan">Scanning a record QR from your clinic is coming next.</string>
     <string name="placeholder_medicines">Look up a medicine or scan its packaging.</string>
     <string name="placeholder_visits">Prepare questions before a visit, or write a recap after one.</string>
@@ -28,9 +39,10 @@
     <string name="onboarding_age">Age</string>
     <string name="onboarding_barangay">Barangay (optional)</string>
     <string name="onboarding_continue">Continue</string>
+    <string name="onboarding_privacy">Your details and records stay on this phone. Nothing is uploaded.</string>
     <string name="debug_reset">Reset (debug)</string>
     <string name="checkin_title">Your check-in code</string>
-    <string name="checkin_body">Show this to the clinic at your visit. It lets them send your records to this phone only.</string>
+    <string name="checkin_body">Show this at the clinic. It lets them send your records to this phone only. The screen stays bright while it is open.</string>
 
     <string name="action_cancel">Cancel</string>
     <string name="action_ok">OK</string>
@@ -41,6 +53,9 @@
     <string name="record_instructions">What to do</string>
     <string name="record_follow_up">Follow-up</string>
     <string name="record_warnings">Get emergency care if you have</string>
+    <string name="scan_record_title">Got a QR from your clinic?</string>
+    <string name="scan_record_body">Scan it to save your visit record on this phone.</string>
+    <string name="scan_try_again">Scan again</string>
     <string name="scan_start">Scan a record from your clinic</string>
     <string name="scan_instructions">Point the camera at the QR code on the clinic screen.</string>
     <string name="scan_camera_denied">patnub needs the camera to scan codes. Allow it in your phone settings.</string>
@@ -59,7 +74,11 @@
     <string name="scan_saved_body">The record is on this phone now. It works without internet.</string>
     <string name="scan_view_records">View my records</string>
 
-    <string name="assistant_intro">Ask about symptoms, your medicines or your visits. Answers come from reviewed sources and the records your clinician gave you. This is not a diagnosis.</string>
+    <string name="assistant_empty_title">How can I help?</string>
+    <string name="suggest_1">I’ve had a headache for two days and feel dizzy when I stand up</string>
+    <string name="suggest_2">What is my medicine for?</string>
+    <string name="suggest_3">When is my next check-up?</string>
+    <string name="assistant_intro">Answers come from reviewed health sources and your clinician’s records, right on this phone. Not a diagnosis.</string>
     <string name="assistant_hint">Ask a health question</string>
     <string name="assistant_send">Send</string>
     <string name="emergency_title">This may be an emergency</string>
