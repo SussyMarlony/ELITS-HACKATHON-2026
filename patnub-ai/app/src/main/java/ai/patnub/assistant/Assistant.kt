@@ -5,6 +5,8 @@ import ai.patnub.data.local.entity.ClinicalRecordEntity
 import ai.patnub.engine.Engine
 import ai.patnub.engine.EngineException
 import ai.patnub.engine.EngineState
+import ai.patnub.engine.Heat
+import ai.patnub.engine.Thermal
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flowOf
@@ -53,7 +55,12 @@ sealed interface Reply {
  * prompt → streamed answer. With a model it can ask follow-up questions and reason about possible
  * causes; without one it answers from the matching passage or gives a structured symptom checklist.
  */
-class Assistant(private val db: PatnubDatabase, private val engine: Engine) {
+class Assistant(
+    private val db: PatnubDatabase,
+    private val engine: Engine,
+    /** Current phone heat; answers get shorter while the phone is hot. */
+    private val heat: () -> Heat = { Heat.NORMAL },
+) {
 
     val supportsImages: Boolean get() = modelReady && engine.supportsImages
     private val modelReady: Boolean get() = engine.state.value.let { it == EngineState.Ready || it == EngineState.Generating }
@@ -110,7 +117,8 @@ class Assistant(private val db: PatnubDatabase, private val engine: Engine) {
         } else {
             PromptBuilder.build(question, general, personal, history, withImage = imagePath != null)
         }
-        val maxTokens = if (engine.streamed) MAX_TOKENS_STREAMED else MAX_TOKENS
+        val baseTokens = if (engine.streamed) MAX_TOKENS_STREAMED else MAX_TOKENS
+        val maxTokens = Thermal.maxTokens(baseTokens, heat())
         val stream = engine.generate(prompt, maxTokens = maxTokens, temperature = 0.3f, imagePath = imagePath, raw = format != null)
             .cleaned()
             .catch { e -> if (e is EngineException && fallbackText.isNotBlank()) emit(fallbackText) else throw e }

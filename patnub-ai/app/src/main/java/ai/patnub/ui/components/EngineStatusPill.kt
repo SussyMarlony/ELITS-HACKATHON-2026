@@ -4,6 +4,8 @@ import ai.patnub.R
 import ai.patnub.engine.Engine
 import ai.patnub.engine.EngineState
 import ai.patnub.engine.EngineStats
+import ai.patnub.engine.Heat
+import ai.patnub.engine.Thermal
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,6 +22,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -52,10 +55,18 @@ fun EngineStatusPill(engine: Engine, onManage: () -> Unit, modifier: Modifier = 
 
 @Composable
 private fun EngineDetails(engine: Engine, state: EngineState, onManage: () -> Unit) {
+    val context = LocalContext.current
     val stats by produceState<EngineStats?>(null, state) {
         // Stats only exist while a model is loaded; poll so memory and speed stay live.
         while (state is EngineState.Ready || state is EngineState.Generating) {
             value = engine.stats()
+            delay(POLL_MS)
+        }
+    }
+    // Android's thermal status (null before Android 10). Polled while the sheet is open.
+    val thermalStatus by produceState(Thermal.status(context)) {
+        while (true) {
+            value = Thermal.status(context)
             delay(POLL_MS)
         }
     }
@@ -73,6 +84,17 @@ private fun EngineDetails(engine: Engine, state: EngineState, onManage: () -> Un
             EngineState.Ready -> R.string.engine_ready
         }
         Row2(stringResource(R.string.engine_row_status), stringResource(status))
+        Row2(
+            stringResource(R.string.engine_row_heat),
+            stringResource(
+                when (thermalStatus?.let(Thermal::heatFor)) {
+                    null -> R.string.heat_unknown
+                    Heat.NORMAL -> R.string.heat_normal
+                    Heat.WARM -> R.string.heat_warm
+                    Heat.HOT -> R.string.heat_hot
+                },
+            ),
+        )
         stats?.let { st ->
             st.vmRssKb?.let { Row2(stringResource(R.string.engine_row_memory), "${it / 1024} MiB") }
             if (st.budgetBytes > 0) Row2(stringResource(R.string.engine_row_layers), "${st.streamedLayers} streamed · ${st.budgetBytes shr 20} MiB budget")

@@ -8,6 +8,7 @@ import ai.patnub.engine.EngineConfig
 import ai.patnub.engine.EngineState
 import ai.patnub.engine.CpuInfo
 import ai.patnub.engine.NativeEngine
+import ai.patnub.engine.Thermal
 import ai.patnub.identity.PatientIdentity
 import ai.patnub.models.ModelCatalog
 import ai.patnub.models.ModelStore
@@ -30,7 +31,7 @@ class PatnubApplication : Application() {
     val identity: PatientIdentity by lazy { PatientIdentity(this, database) }
 
     val importer: RecordImporter by lazy { RecordImporter(database, identity) }
-    val assistant: Assistant by lazy { Assistant(database, engine) }
+    val assistant: Assistant by lazy { Assistant(database, engine) { Thermal.heat(this) } }
     val models: ModelStore by lazy { ModelStore(this) }
 
     /** One engine per process (msr_engine's provider is a singleton). Loads once a model is installed. */

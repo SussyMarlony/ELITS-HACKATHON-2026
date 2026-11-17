@@ -15,6 +15,11 @@
     <string name="engine_row_layers">Model layers</string>
     <string name="engine_row_speed">Speed</string>
     <string name="engine_row_temp">Temperature</string>
+    <string name="engine_row_heat">Phone heat</string>
+    <string name="heat_normal">Normal</string>
+    <string name="heat_warm">Warm · answers a little shorter</string>
+    <string name="heat_hot">Hot · answers about half as long</string>
+    <string name="heat_unknown">Not reported by this phone</string>
 
     <string name="tab_assistant">Assistant</string>
     <string name="tab_records">Records</string>

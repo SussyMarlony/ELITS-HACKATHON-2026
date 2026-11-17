@@ -42,7 +42,8 @@ Biggest wins first:
 - [ ] **6 GB tier: in memory instead of streamed?** Measured on PC: in-memory MedGemma needs less
       non-reclaimable RAM (1.1 GB vs 1.3 GB), is ~3× faster and reads photos. Needs a real 6 GB phone test.
 - [x] **Show progress honestly.** `ReadingProgress` shows pulsing dots + `"Reading your question… Ns"`
-      until the first token arrives. Still open: lower `MAX_TOKENS` dynamically when the phone is hot.
+      until the first token arrives. `Thermal` (`PowerManager.currentThermalStatus`) shortens answers
+      to 3/4 at MODERATE and 1/2 at SEVERE+, and the engine sheet shows "Phone heat".
 
 ## 2. Test on real hardware
 
