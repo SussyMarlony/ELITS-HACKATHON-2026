@@ -33,8 +33,6 @@ android {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "4.1.2"
-            // Keep the large native build tree out of the source folder.
-            buildStagingDirectory = layout.buildDirectory.dir("cxx").get().asFile
         }
     }
 

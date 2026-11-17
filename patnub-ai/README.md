@@ -143,9 +143,6 @@ Patient-only app (spec v1.2):
 - **Visits**: question suggestions before a visit (editable, saved) and patient-reported recaps
   after one, with dose conflicts against clinician records shown side by side.
 
-Build note: `/mnt/DEV` was full during development, so builds were run with
-`./gradlew -I ~/.cache/patnub-build/tmpbuild.gradle ...` to put outputs under `~/.cache`.
-
 ## Privacy defaults
 
 - Runs offline. `INTERNET` is requested only for the optional one-time model download
