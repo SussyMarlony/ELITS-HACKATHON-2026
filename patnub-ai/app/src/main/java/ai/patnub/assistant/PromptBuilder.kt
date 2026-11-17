@@ -13,35 +13,32 @@ data class Turn(val fromPatient: Boolean, val text: String)
  * the complaint is vague; once it knows enough, give possible common causes (never a diagnosis),
  * self-care, and clear signs to get care. Prefer the background notes; never change a medicine.
  *
- * Two shapes: [chat] sends real alternating turns in the model's own format (in-memory runtime);
- * [build] packs the conversation into one message for runtimes that format prompts themselves
- * (msr_engine streamed mode).
+ * Speed: [RULES] never change, and earlier turns are sent exactly as before, so the native cache
+ * reuses everything up to the newest message. Per-question material (reference passages, the
+ * reply language) rides in the newest message only.
+ *
+ * Two shapes: [chat] sends real alternating turns in the model's own format; [build] packs the
+ * conversation into one message for models without a known chat format.
  */
 object PromptBuilder {
-    /** Reference text budget. Prompt speed is ~15 tok/s streamed, far faster in memory. */
-    const val MAX_CONTEXT_CHARS = 1_400
+    /** Reference text budget per question (~100 tokens); every token here costs time on the phone. */
+    const val MAX_CONTEXT_CHARS = 450
     private const val MAX_HISTORY_CHARS = 900
 
-    fun instructions(
-        general: List<ScoredChunk>,
-        records: List<ClinicalRecordEntity>,
-        withImage: Boolean,
-        tagalog: Boolean = false,
-    ): String = buildString {
-        appendLine("You are patnub, a kind health assistant for patients in the rural Philippines. You are not a doctor and you cannot diagnose.")
-        appendLine("How to reply:")
-        appendLine(
-            if (tagalog) "- The patient writes in Tagalog or Taglish. Reply in simple Tagalog or Taglish, speaking directly to them."
-            else "- The patient writes in English. Reply in simple English, speaking directly to them.",
-        )
-        appendLine("- If you do not yet know enough (how long, how bad, where exactly, injury or swelling, fever, other symptoms), ask 2 or 3 short questions first and stop.")
-        appendLine("- When you know enough: give the most likely common causes, saying they are possibilities, then simple safe self-care, then the warning signs that mean they should see a clinician or go to the hospital.")
-        appendLine("- Never tell them to start, stop or change a prescribed medicine or dose; send them to their clinician for that.")
-        appendLine("- Do not say \"context\", \"notes\" or \"sources\". Keep it under 120 words. Only help with health questions.")
-        appendLine("- Write only your own reply. Never write the patient's next message.")
-        if (withImage) {
-            appendLine("- The patient attached a photo. Say plainly what you can see. If it is a medicine package, read the name, strength and form exactly as printed. If unsure, say so. Do not diagnose from a photo.")
-        }
+    /** Fixed instructions. Changing this text invalidates every cached prompt. */
+    val RULES = """
+        You are patnub, a kind health assistant for rural Philippine patients. You are not a doctor and cannot diagnose.
+        - Ask 2 or 3 short clarifying questions first if details are missing (duration, severity, location, injury/swelling, fever).
+        - Once clear: list possible common causes, simple safe self-care, and warning signs to see a clinician or hospital.
+        - Never tell patients to start, stop, or change prescribed medicines; refer to their clinician.
+        - Keep under 120 words, in simple words. Only help with health questions. Never mention "notes" or "sources". Write only your reply.
+    """.trimIndent()
+
+    private const val PHOTO_RULE =
+        "The patient attached a photo. Say plainly what you see. For a medicine pack, read the name, strength and form exactly as printed. Do not diagnose from a photo."
+
+    /** Reference passages and the patient's own record for this question, or "" when none matched. */
+    fun background(general: List<ScoredChunk>, records: List<ClinicalRecordEntity>): String {
         val ctx = StringBuilder()
         // The patient's own clinician record goes first so the length cap can never cut it off.
         records.forEach { r ->
@@ -52,16 +49,30 @@ object PromptBuilder {
             r.followUp?.let { ctx.append("Follow-up: $it.") }
             ctx.appendLine()
         }
-        if (general.isNotEmpty()) {
-            val perPassage = ((MAX_CONTEXT_CHARS - ctx.length) / general.size).coerceAtLeast(200)
-            general.forEach { ctx.appendLine("Reference (${it.chunk.sourceTitle}): ${it.chunk.contentText.replace("\n\n", " ").take(perPassage)}") }
+        // Send one passage when the top score is clearly ahead; a second only on a near tie.
+        val passages = general.take(1) + general.drop(1).filter { it.score >= general.first().score * 0.95 }
+        if (passages.isNotEmpty()) {
+            val perPassage = ((MAX_CONTEXT_CHARS - ctx.length) / passages.size).coerceAtLeast(200)
+            passages.forEach { ctx.appendLine("Reference (${it.chunk.sourceTitle}): ${it.chunk.contentText.replace("\n\n", " ").take(perPassage)}") }
         }
-        if (ctx.isNotEmpty()) {
-            appendLine()
-            appendLine("Background to use when it fits:")
-            append(ctx.toString().take(MAX_CONTEXT_CHARS + 600))
-        }
-    }.trimEnd()
+        return ctx.toString().trim().take(MAX_CONTEXT_CHARS + 400)
+    }
+
+    /** The newest patient message followed by compact per-question context (keeps models from echoing notes). */
+    fun newestMessage(question: String, background: String, withImage: Boolean): String = buildString {
+        append(question)
+        append("\n\n[")
+        if (background.isNotEmpty()) append(background).append('\n')
+        if (withImage) append(PHOTO_RULE).append('\n')
+        append(
+            if (Language.isTagalog(question)) "Sagutin sa simpleng Tagalog o Taglish lamang."
+            else "Reply in simple English.",
+        )
+        append(']')
+    }
+
+    /** Text to cache right after the model loads: every prompt starts with it. */
+    fun warmup(format: ChatFormat): String = format.prefix(RULES)
 
     /** Real multi-turn prompt in [format], ending with an open model turn. */
     fun chat(
@@ -72,11 +83,12 @@ object PromptBuilder {
         history: List<Turn> = emptyList(),
         withImage: Boolean = false,
     ): String {
-        val turns = (history.fitting() + Turn(true, question)).dropWhile { !it.fromPatient } // must start with the patient
-        return format.format(instructions(general, records, withImage, Language.isTagalog(question)), turns.map { it.fromPatient to it.text }, withImage)
+        val newest = Turn(true, newestMessage(question, background(general, records), withImage))
+        val turns = (history.fitting() + newest).dropWhile { !it.fromPatient } // must start with the patient
+        return format.format(RULES, turns.map { it.fromPatient to it.text }, withImage)
     }
 
-    /** Whole conversation in one message, for runtimes that apply the chat template themselves. */
+    /** Whole conversation in one message, for models without a known chat format. */
     fun build(
         question: String,
         general: List<ScoredChunk>,
@@ -84,11 +96,12 @@ object PromptBuilder {
         history: List<Turn> = emptyList(),
         withImage: Boolean = false,
     ): String = buildString {
-        appendLine(instructions(general, records, withImage, Language.isTagalog(question)))
+        appendLine(RULES)
         appendLine()
+        background(general, records).takeIf { it.isNotEmpty() }?.let { appendLine("Background to use when it fits:\n$it\n") }
         appendLine("Conversation:")
         history.fitting().forEach { appendLine((if (it.fromPatient) "Patient: " else "patnub: ") + it.text) }
-        appendLine("Patient: $question")
+        appendLine("Patient: " + newestMessage(question, "", withImage))
     }
 
     private fun List<Turn>.fitting(): List<Turn> {

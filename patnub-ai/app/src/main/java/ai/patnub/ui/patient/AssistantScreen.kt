@@ -5,7 +5,18 @@ import ai.patnub.assistant.Assistant
 import ai.patnub.assistant.Reply
 import ai.patnub.assistant.Source
 import ai.patnub.ui.components.EmptyState
+import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -154,12 +165,14 @@ fun AssistantScreen(
     var input by rememberSaveable { mutableStateOf("") }
     var photo by rememberSaveable { mutableStateOf<String?>(null) }
     val context = LocalContext.current
-    // Photo Picker: no storage permission; the photo is copied into app cache for the model.
+    val scope = rememberCoroutineScope()
+    // Photo Picker: no storage permission; downscaled on IO so vision encoding stays fast on phones.
     val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
-            val out = java.io.File(context.cacheDir, "question-photo.jpg")
-            context.contentResolver.openInputStream(uri)?.use { i -> out.outputStream().use { i.copyTo(it) } }
-            photo = out.path
+            scope.launch {
+                val out = java.io.File(context.cacheDir, "question-photo.jpg")
+                if (withContext(Dispatchers.IO) { saveDownscaledPhoto(context, uri, out) }) photo = out.path
+            }
         }
     }
     val listState = rememberLazyListState()
@@ -341,6 +354,14 @@ private fun AnswerBubble(item: ChatItem.Answer) {
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text(stringResource(R.string.emergency_call)) }
+                OutlinedButton(
+                    onClick = {
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, "geo:0,0?q=Rural+Health+Unit+or+hospital".toUri()))
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(stringResource(R.string.emergency_find_rhu), color = MaterialTheme.colorScheme.onErrorContainer) }
             }
         }
         is Reply.AskPrescriber -> Card(bubble) {
@@ -357,7 +378,7 @@ private fun AnswerBubble(item: ChatItem.Answer) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (r.fallback) Label(stringResource(R.string.answer_fallback))
                 when {
-                    item.text.isBlank() && !item.done -> TypingDots()
+                    item.text.isBlank() && !item.done -> ReadingProgress()
                     // The model stopped without a visible reply (e.g. ran out of length while reasoning).
                     item.text.isBlank() -> Text(stringResource(R.string.assistant_empty_answer), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     else -> Text(lightMarkdown(item.text.trim()))
@@ -380,7 +401,27 @@ private fun AnswerBubble(item: ChatItem.Answer) {
 private fun Label(text: String, color: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant) =
     Text(text, style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.Medium)
 
-/** Three softly pulsing dots until the first piece of the answer arrives. */
+/** Three softly pulsing dots plus elapsed wait time while the model processes the prompt. */
+@Composable
+private fun ReadingProgress() {
+    var seconds by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_000)
+            seconds += 1
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        TypingDots()
+        Text(
+            if (seconds >= 1) stringResource(R.string.assistant_reading_elapsed, seconds)
+            else stringResource(R.string.assistant_reading),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 @Composable
 private fun TypingDots() {
     val t = rememberInfiniteTransition(label = "typing")
@@ -394,6 +435,32 @@ private fun TypingDots() {
         }
     }
 }
+
+/** Downscales [uri] so the longest side is at most [maxDim] px, saving vision encoding time. */
+private fun saveDownscaledPhoto(context: Context, uri: Uri, out: java.io.File, maxDim: Int = 768): Boolean =
+    runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            context.contentResolver.openInputStream(uri)?.use { i -> out.outputStream().use { i.copyTo(it) } }
+            return@runCatching true
+        }
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > maxDim * 2) sample *= 2
+        val decoded = context.contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+        } ?: return@runCatching false
+        val scale = maxDim.toFloat() / maxOf(decoded.width, decoded.height)
+        val bmp = if (scale < 1f) {
+            Bitmap.createScaledBitmap(decoded, (decoded.width * scale).toInt().coerceAtLeast(1), (decoded.height * scale).toInt().coerceAtLeast(1), true)
+                .also { if (it !== decoded) decoded.recycle() }
+        } else {
+            decoded
+        }
+        out.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 88, it) }
+        bmp.recycle()
+        true
+    }.getOrDefault(false)
 
 @Composable
 private fun SourceChip(s: Source) = AssistChip(

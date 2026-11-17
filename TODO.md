@@ -12,32 +12,37 @@ Gemma 4 E2B: ~3 s, then ~13 tok/s. Streamed MedGemma (6 GB phones): ~3 tok/s. A 
 
 Biggest wins first:
 
-- [ ] **Reuse the KV cache across turns.** `generate_resident` calls `llama_memory_clear` every time,
-      so each message re-processes the instructions, background and whole history. Keep the cache and
-      only feed the tokens after the longest shared prefix. Expect first-word time on follow-ups to
-      drop from ~10 s to ~1–2 s. (`app/src/main/cpp/patnub_llm.cpp`)
-- [ ] **Pre-compute the instructions once.** The rules block is identical for every message: evaluate it
-      at model load and save the state (`llama_state_seq_get_data` / `_set_data`), restore per question.
-- [ ] **Shorter prompt.** Trim the instruction text, cap each reference passage lower (`PromptBuilder.MAX_CONTEXT_CHARS`
-      1,400 → ~800), send one passage instead of two when the top score is clearly ahead.
-- [ ] **Warm up after load.** Run a 1-token generation right after `engine.load` so the first real
-      question does not pay for page-faulting the weights in.
-- [ ] **Use the right CPU cores.** Threads are `availableProcessors().coerceIn(2, 4)`; pick the count of
-      performance cores (read `/sys/devices/system/cpu/cpu*/cpufreq/cpuinfo_max_freq`) and pin batch threads.
+- [x] **Reuse the KV cache across turns.** `generate_resident` keeps `kv_tokens` and `sync_kv`
+      only feeds tokens after the longest shared prefix (`app/src/main/cpp/patnub_llm.cpp`).
+      Verified on PC: follow-ups reuse instructions + prior turns (`reused=166–250`).
+- [x] **Pre-compute the instructions once.** `Assistant.prewarm()` runs `nativePrefill` on the
+      fixed `RULES` prefix right after `engine.load`, and `NativeEngine.generate` cancels/waits for
+      any in-progress prefill so the user never hits `BUSY`.
+- [x] **Shorter prompt.** Trimmed `RULES`, `PromptBuilder.MAX_CONTEXT_CHARS` 1,400 → 450, send one
+      passage unless the second is within 95% of top score, and put the patient's question before
+      notes (fixed MedGemma echoing instructions; MedGemma TTFT dropped from ~10 s to ~3.0 s on PC).
+- [x] **Warm up after load.** `assistant.prewarm()` evaluates the instruction prefix right after
+      `engine.load` so weights page-fault in before the first question.
+- [x] **Use the right CPU cores.** `CpuInfo.performanceCores()` reads `cpu_capacity` (falling back
+      to `cpuinfo_max_freq` > slowest cluster) so little cores are excluded (e.g. 2 on Snapdragon 695,
+      4 on Snapdragon 8 Gen 2).
 - [ ] **Newer ARM instructions.** Build is `armv8.2-a+dotprod` only. Add an `i8mm` variant
       (`GGML_CPU_ALL_VARIANTS` + `GGML_BACKEND_DL`, or two `.so` builds chosen at runtime) for
       2021+ phones; measure on a real device.
-- [ ] **Allow weight repacking on 8 GB+ phones.** It is off everywhere to save memory; on phones with
-      room it speeds up Q4 matrix maths. Make it a per-tier setting and measure memory.
-- [ ] **Try CPU flash attention** (`cparams.flash_attn_type`) and a smaller batch for short prompts.
+- [x] **Allow weight repacking on phones with headroom.** `ModelCatalog.shouldRepack` enables
+      `use_extra_bufts` for Gemma 4 Q4_0 on 6 GB+ phones (measured +359 MB anon, TTFT 1231 → 615 ms)
+      and MedGemma Q4_K_M on 10 GB+ phones (kept off on 8 GB phones where Q4_K_M adds +1.5 GB anon).
+- [ ] **Try a smaller batch for short prompts** (`FLASH_ATTN_EXT` is already enabled via `FLASH_ATTN_TYPE_AUTO`).
 - [ ] **GPU.** Try llama.cpp's OpenCL backend (Adreno) and Vulkan; keep CPU as fallback.
 - [ ] **Speculative decoding for Gemma 4.** `ggml-org/gemma-4-E2B-it-GGUF` ships an MTP draft
       (`mtp-gemma-4-E2B-it-Q4_0.gguf`, 59 MB); wire it in and measure.
-- [ ] **Faster photos.** Downscale before encoding, set `image_max_tokens`, try a lower-precision mmproj.
+- [x] **Faster photos (downscale + token cap).** `AssistantScreen` downscales picked photos to
+      max 768 px on IO and `patnub_llm.cpp` sets `vp.image_max_tokens = 256` (caps Gemma 4 at
+      589,824 px instead of 2.58M). Still open: try a lower-precision mmproj.
 - [ ] **6 GB tier: in memory instead of streamed?** Measured on PC: in-memory MedGemma needs less
       non-reclaimable RAM (1.1 GB vs 1.3 GB), is ~3× faster and reads photos. Needs a real 6 GB phone test.
-- [ ] **Show progress honestly.** While the prompt is processed, show "Reading your question…" with
-      the elapsed time, then stream; consider shorter `MAX_TOKENS` (220 / 140) when the phone is hot.
+- [x] **Show progress honestly.** `ReadingProgress` shows pulsing dots + `"Reading your question… Ns"`
+      until the first token arrives. Still open: lower `MAX_TOKENS` dynamically when the phone is hot.
 
 ## 2. Test on real hardware
 
@@ -58,16 +63,14 @@ Biggest wins first:
 - [ ] ORS and other common RHU items with no FDA label.
 - [ ] Clinical evaluation set and the measures in spec §12.2 (evidence support, safe fallback rate,
       emergency sensitivity, unsafe advice rate).
-- [ ] Emergency card: nearest RHU / hospital, not only "Call 911".
-- [ ] MedGemma often answers Tagalog questions in English; Gemma 4 is fine. Try a Tagalog example
-      exchange in the prompt, or prefer Gemma 4 for Tagalog conversations.
+- [x] Emergency card: nearest RHU / hospital, not only "Call 911".
+- [ ] MedGemma often answers Tagalog questions in English; Gemma 4 is fine. Added `"Sagutin sa simpleng Tagalog o Taglish lamang."` in `PromptBuilder`; verify more Tagalog phrases or prefer Gemma 4 for Tagalog conversations.
 - [ ] Streamed mode (msr_engine) still gets the one-message transcript prompt; give it real chat turns
       (needs a raw-prompt option in msr_engine).
 
 ## 4. Patient app features
 
-- [ ] Finish and commit the in-progress "edit profile" change (uncommitted: `UserDao.kt`,
-      `PatientIdentity.kt`, `PatnubApp.kt`, `PatientScreens.kt`, `strings.xml`).
+- [x] Finish and commit the in-progress "edit profile" change (committed in `d21309a`).
 - [ ] Tagalog / Filipino UI translation (all strings are English).
 - [ ] Voice input for questions and visit recaps (offline speech-to-text).
 - [ ] Medicine pack scan through the vision model (MedGemma read "PARACETAMOL 500 mg Tablet" correctly on PC).

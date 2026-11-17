@@ -57,7 +57,13 @@ struct Bridge {
     std::string last_error;
 
     // Last generation (both modes); streamed mode adds msr_external_get_stats in nativeStats.
-    uint64_t prompt_tokens = 0, generated_tokens = 0, ttft_ms = 0, prompt_ms = 0, generate_ms = 0;
+    // prompt_tokens = tokens actually processed; reused_tokens = served from the KV cache.
+    uint64_t prompt_tokens = 0, reused_tokens = 0, generated_tokens = 0, ttft_ms = 0, prompt_ms = 0, generate_ms = 0;
+
+    // Tokens currently in the KV cache (sequence 0), in order. A new prompt that starts with the
+    // same tokens (instructions, earlier turns) only processes what is new: follow-up questions
+    // answer in seconds instead of re-reading the whole conversation.
+    std::vector<llama_token> kv_tokens;
 };
 
 std::once_flag g_backend_once;
@@ -149,6 +155,49 @@ bool emit(Callback& cb, const char* data, size_t len) {
     return keep == JNI_TRUE;
 }
 
+std::vector<llama_token> tokenize(const Bridge* b, const std::string& text) {
+    std::vector<llama_token> toks(text.size() + 16);
+    int n = llama_tokenize(b->vocab, text.data(), static_cast<int32_t>(text.size()), toks.data(), static_cast<int32_t>(toks.size()), true, true);
+    if (n < 0) {
+        toks.resize(static_cast<size_t>(-n));
+        n = llama_tokenize(b->vocab, text.data(), static_cast<int32_t>(text.size()), toks.data(), static_cast<int32_t>(toks.size()), true, true);
+    }
+    if (n < 0) return {};
+    toks.resize(static_cast<size_t>(n));
+    return toks;
+}
+
+void forget_kv(Bridge* b) {
+    llama_memory_clear(llama_get_memory(b->ctx), true);
+    b->kv_tokens.clear();
+}
+
+/**
+ * Makes the KV cache hold exactly [toks], reusing the longest prefix already there. At least the
+ * last token is always (re)decoded so its logits exist. Returns 0 ok, 7 aborted, 8 error.
+ */
+int sync_kv(Bridge* b, const std::vector<llama_token>& toks) {
+    size_t keep = 0;
+    while (keep < b->kv_tokens.size() && keep < toks.size() && b->kv_tokens[keep] == toks[keep]) ++keep;
+    if (keep >= toks.size()) keep = toks.empty() ? 0 : toks.size() - 1;
+    if (keep == 0 || !llama_memory_seq_rm(llama_get_memory(b->ctx), 0, static_cast<llama_pos>(keep), -1)) {
+        forget_kv(b);
+        keep = 0;
+    }
+    b->kv_tokens.resize(keep);
+    b->reused_tokens = keep;
+    for (size_t off = keep; off < toks.size(); off += 512) {
+        const int chunk = static_cast<int>(std::min<size_t>(512, toks.size() - off));
+        if (llama_decode(b->ctx, llama_batch_get_one(const_cast<llama_token*>(toks.data()) + off, chunk)) != 0) {
+            forget_kv(b);  // partial batch: the cache no longer matches kv_tokens
+            return b->cancel.load() ? 7 : 8;
+        }
+        b->kv_tokens.insert(b->kv_tokens.end(), toks.begin() + static_cast<long>(off), toks.begin() + static_cast<long>(off) + chunk);
+    }
+    b->prompt_tokens = toks.size() - keep;
+    return 0;
+}
+
 // Resident generation with optional image. Returns 0 ok, 7 aborted, 8 error (msr_result codes).
 int generate_resident(Bridge* b, const std::string& prompt, const std::string& image, bool raw,
                       int max_tokens, float temperature, int seed, Callback& cb) {
@@ -164,41 +213,38 @@ int generate_resident(Bridge* b, const std::string& prompt, const std::string& i
     }
     const std::string text = raw ? prompt : format_turn(b, user);
 
-    llama_memory_clear(llama_get_memory(b->ctx), true);
     const auto t0 = Clock::now();
     const int32_t n_ctx = static_cast<int32_t>(llama_n_ctx(b->ctx));
-    llama_pos n_past = 0;
 
-    if (b->vision) {
+    if (bmp) {
+        // Photo turns are not cached (image tokens are not plain token ids): start clean.
+        forget_kv(b);
         mtmd::input_chunks_ptr chunks(mtmd_input_chunks_init());
         mtmd_input_text in{text.c_str(), text.size(), /*add_special=*/true, /*parse_special=*/true};
         const mtmd_bitmap* bitmaps[1] = {bmp.get()};
-        if (mtmd_tokenize(b->vision, chunks.get(), &in, bitmaps, bmp ? 1 : 0) != 0) {
+        if (mtmd_tokenize(b->vision, chunks.get(), &in, bitmaps, 1) != 0) {
             b->last_error = "tokenize failed"; return 8;
         }
         const size_t n_tok = mtmd_helper_get_n_tokens(chunks.get());
         if (static_cast<int32_t>(n_tok) + max_tokens > n_ctx) { b->last_error = "prompt + max_tokens exceeds context"; return 8; }
+        llama_pos n_past = 0;
         if (mtmd_helper_eval_chunks(b->vision, b->ctx, chunks.get(), 0, 0, 512, true, &n_past) != 0) {
+            forget_kv(b);
             if (b->cancel.load()) return 7;
             b->last_error = "prompt evaluation failed"; return 8;
         }
         b->prompt_tokens = n_tok;
+        b->reused_tokens = 0;
     } else {
-        std::vector<llama_token> toks(text.size() + 16);
-        int n = llama_tokenize(b->vocab, text.data(), static_cast<int32_t>(text.size()), toks.data(), static_cast<int32_t>(toks.size()), true, true);
-        if (n < 0) { toks.resize(static_cast<size_t>(-n)); n = llama_tokenize(b->vocab, text.data(), static_cast<int32_t>(text.size()), toks.data(), static_cast<int32_t>(toks.size()), true, true); }
-        if (n < 0) { b->last_error = "tokenize failed"; return 8; }
-        toks.resize(static_cast<size_t>(n));
-        if (n + max_tokens > n_ctx) { b->last_error = "prompt + max_tokens exceeds context"; return 8; }
-        for (int off = 0; off < n; off += 512) {
-            const int chunk = std::min(512, n - off);
-            if (llama_decode(b->ctx, llama_batch_get_one(toks.data() + off, chunk)) != 0) {
-                if (b->cancel.load()) return 7;
-                b->last_error = "prompt decode failed"; return 8;
-            }
+        const std::vector<llama_token> toks = tokenize(b, text);
+        if (toks.empty()) { b->last_error = "tokenize failed"; return 8; }
+        if (static_cast<int32_t>(toks.size()) + max_tokens > n_ctx) {
+            // Long conversations: drop the cache and let Kotlin's history cap keep prompts short.
+            b->last_error = "prompt + max_tokens exceeds context"; return 8;
         }
-        n_past = n;
-        b->prompt_tokens = static_cast<uint64_t>(n);
+        const int rc = sync_kv(b, toks);
+        if (rc == 7) return 7;
+        if (rc != 0) { b->last_error = "prompt decode failed"; return 8; }
     }
     b->prompt_ms = ms_since(t0);
 
@@ -225,10 +271,11 @@ int generate_resident(Bridge* b, const std::string& prompt, const std::string& i
         const std::string piece = piece_of(b->vocab, tok);
         if (!piece.empty() && !emit(cb, piece.data(), piece.size())) { rc = 7; break; }
         if (llama_decode(b->ctx, llama_batch_get_one(&tok, 1)) != 0) {
+            forget_kv(b);
             if (b->cancel.load()) { rc = 7; break; }
             b->last_error = "decode failed"; rc = 8; break;
         }
-        ++n_past;
+        if (!bmp) b->kv_tokens.push_back(tok);
     }
     b->generate_ms = ms_since(g0);
     llama_sampler_free(smpl);
@@ -241,7 +288,7 @@ extern "C" {
 
 JNIEXPORT jlong JNICALL
 Java_ai_patnub_engine_NativeEngine_nativeLoad(JNIEnv* env, jclass, jstring jmodel, jstring jmmproj, jboolean streamed,
-                                              jlong budget, jint ctx_tokens, jint threads, jint read_threads, jboolean prefetch) {
+                                              jlong budget, jint ctx_tokens, jint threads, jint read_threads, jboolean prefetch, jboolean repack) {
     const std::string model_path = jstr(env, jmodel);
     const std::string mmproj = jstr(env, jmmproj);
     auto* b = new Bridge();
@@ -256,9 +303,9 @@ Java_ai_patnub_engine_NativeEngine_nativeLoad(JNIEnv* env, jclass, jstring jmode
     std::call_once(g_backend_once, [] { llama_backend_init(); });
     llama_model_params mp = llama_model_default_params();
     mp.n_gpu_layers = 0; // CPU only: consistent across phones
-    // No repacking: it copies the weights out of the mmap into a second buffer, close to doubling
-    // memory (msr_engine BENCHMARKS: 4,984 vs ~2,624 MiB). Phones need the memory more than the speed.
-    mp.use_extra_bufts = false;
+    // Repacking speeds up Q4 matrix maths by copying weights into an optimized CPU layout, at the
+    // cost of extra private RAM; only enabled on phones with headroom.
+    mp.use_extra_bufts = repack == JNI_TRUE && !b->streamed;
     if (b->streamed) {
         mp.load_mode = LLAMA_LOAD_MODE_NONE;  // no whole-file mmap; the provider binds the weights
         mp.lazy_mode = LLAMA_LAZY_MODE_OFF;
@@ -284,6 +331,8 @@ Java_ai_patnub_engine_NativeEngine_nativeLoad(JNIEnv* env, jclass, jstring jmode
         vp.n_threads = cp.n_threads;
         vp.print_timings = false;
         vp.warmup = false;
+        // Cap dynamic-resolution models (Gemma 4) so phone camera photos stay well under ~10 s.
+        vp.image_max_tokens = 256;
         b->vision = mtmd_init_from_file(mmproj.c_str(), b->model, vp);
         if (!b->vision) LOGE("vision projector failed to load; continuing text-only");
     }
@@ -306,6 +355,18 @@ Java_ai_patnub_engine_NativeEngine_nativeGenerate(JNIEnv* env, jclass, jlong han
     const std::string image = jstr(env, jimage);
 
     return generate_resident(b, prompt, image, raw == JNI_TRUE, max_tokens, temperature, seed, cb);
+}
+
+/** Processes [text] into the KV cache without generating (instructions at load, warm-up). */
+JNIEXPORT jint JNICALL
+Java_ai_patnub_engine_NativeEngine_nativePrefill(JNIEnv* env, jclass, jlong handle, jstring jtext) {
+    auto* b = reinterpret_cast<Bridge*>(handle);
+    if (!b) return 1;
+    std::lock_guard<std::mutex> lock(b->generate_mutex);
+    b->cancel.store(false);
+    const std::vector<llama_token> toks = tokenize(b, jstr(env, jtext));
+    if (toks.empty()) return 1;
+    return sync_kv(b, toks);
 }
 
 JNIEXPORT void JNICALL
@@ -337,7 +398,7 @@ Java_ai_patnub_engine_NativeEngine_nativeSupportsImages(JNIEnv*, jclass, jlong h
 }
 
 /** [prompt, generated, ttft, prompt_ms, generate_ms, budget, resident, peak_weights, read_bytes,
- *   streamed_layers, vm_hwm_kb, vm_rss_kb, thermal_c] */
+ *   streamed_layers, vm_hwm_kb, vm_rss_kb, reused_prompt_tokens] */
 JNIEXPORT jlongArray JNICALL
 Java_ai_patnub_engine_NativeEngine_nativeStats(JNIEnv* env, jclass, jlong handle) {
     auto* b = reinterpret_cast<Bridge*>(handle);
@@ -345,13 +406,14 @@ Java_ai_patnub_engine_NativeEngine_nativeStats(JNIEnv* env, jclass, jlong handle
     if (b) {
         v[0] = (jlong) b->prompt_tokens; v[1] = (jlong) b->generated_tokens; v[2] = (jlong) b->ttft_ms;
         v[3] = (jlong) b->prompt_ms; v[4] = (jlong) b->generate_ms;
+        v[12] = (jlong) b->reused_tokens;
         if (b->streamed) {
             msr_external_stats w{};
             msr_external_get_stats(&w);
             v[5] = (jlong) w.budget_bytes; v[6] = (jlong) w.resident_weight_bytes; v[7] = (jlong) w.peak_weight_bytes;
             v[8] = (jlong) w.read_bytes; v[9] = (jlong) w.streamed_layers;
         }
-        v[10] = proc_status_kb("VmHWM:"); v[11] = proc_status_kb("VmRSS:"); v[12] = -1;
+        v[10] = proc_status_kb("VmHWM:"); v[11] = proc_status_kb("VmRSS:");
     }
     jlongArray out = env->NewLongArray(13);
     env->SetLongArrayRegion(out, 0, 13, v);

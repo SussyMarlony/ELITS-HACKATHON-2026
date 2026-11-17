@@ -19,10 +19,23 @@ class ConversationTest {
 
     @Test fun earlierTurnsReachThePromptAndTheNewQuestionIsLast() {
         val history = listOf(Turn(true, "My fingers hurt"), Turn(false, "How long has it hurt, and is it swollen?"))
-        val p = PromptBuilder.build("Two days, a little swollen, no fever", emptyList(), emptyList(), history)
-        assertTrue(p.contains("Patient: My fingers hurt\npatnub: How long has it hurt, and is it swollen?\nPatient: Two days, a little swollen, no fever"))
-        assertTrue(p.trimEnd().endsWith("Patient: Two days, a little swollen, no fever"))
-        assertTrue("ask 2 or 3 short questions" in p)
+        val p = PromptBuilder.chat(ChatFormat.GEMMA4, "Two days, a little swollen, no fever", emptyList(), emptyList(), history)
+        assertTrue(p.contains("<|turn>user\nMy fingers hurt<turn|>\n<|turn>model\nHow long has it hurt, and is it swollen?<turn|>"))
+        assertTrue(p.contains("Two days, a little swollen, no fever\n\n[Reply in simple English.]<turn|>\n<|turn>model\n"))
+        assertTrue("Ask 2 or 3 short clarifying questions" in p)
+    }
+
+    @Test fun promptsShareAPrefixSoTheCacheIsReused() {
+        val k = Bundled.knowledge
+        val f = ChatFormat.GEMMA3
+        val t1 = listOf(Turn(true, "My fingers hurt"), Turn(false, "How long?"))
+        val t2 = t1 + listOf(Turn(true, "Two days"), Turn(false, "Is it swollen?"))
+        val p2 = PromptBuilder.chat(f, "Two days", KeywordRanker.rank("fingers two days", k), emptyList(), t1)
+        val p3 = PromptBuilder.chat(f, "Yes, swollen", KeywordRanker.rank("fingers swollen", k), emptyList(), t2)
+        assertTrue(p2.startsWith(PromptBuilder.warmup(f)))
+        // Everything up to the previous patient message is identical: the instructions and the first exchange.
+        val shared = p2.commonPrefixWith(p3)
+        assertTrue(shared.contains("How long?<end_of_turn>\n<start_of_turn>user\n"))
     }
 
     @Test fun longHistoryIsTrimmedFromTheOldEnd() {
@@ -41,7 +54,7 @@ class ConversationTest {
     @Test fun chatFormatHasRealTurnsAndSkipsReasoning() {
         val g3 = ChatFormat.GEMMA3.format("RULES", listOf(true to "hi", false to "hello", true to "my finger hurts"), lastHasImage = false)
         assertEquals(
-            "<start_of_turn>user\nRULES<end_of_turn>\n<start_of_turn>model\nUnderstood. I am patnub. I will follow these rules and reply only to the patient.<end_of_turn>\n" +
+            "<start_of_turn>user\nRULES<end_of_turn>\n<start_of_turn>model\nUnderstood. I am patnub. I will reply directly to the patient.<end_of_turn>\n" +
                 "<start_of_turn>user\nhi<end_of_turn>\n<start_of_turn>model\nhello<end_of_turn>\n" +
                 "<start_of_turn>user\nmy finger hurts<end_of_turn>\n<start_of_turn>model\n<unused94>thought\n<unused95>",
             g3,
@@ -69,7 +82,27 @@ class ConversationTest {
             save("03-cough", "Whats a medicine for cough", emptyList())
             save("04-tagalog", "Masakit ang tiyan ko at nagtatae ako mula kahapon", emptyList())
             save("05-offtopic", "Who won the basketball game?", emptyList())
+            // A 3-turn conversation for measuring cache reuse (fixed model answers).
+            File(dir, "conv-0.$tag.txt").writeText(PromptBuilder.warmup(f))
+            val h1 = listOf(Turn(true, "My fingers hurt"), Turn(false, "How long have they hurt, and is any finger swollen?"))
+            val h2 = h1 + listOf(Turn(true, "Two days. The middle finger is swollen."), Turn(false, "Did you hurt it, for example playing sports? Do you have a fever?"))
+            save("conv-1", "My fingers hurt", emptyList())
+            save("conv-2", "Two days. The middle finger is swollen.", h1)
+            save("conv-3", "I jammed it playing basketball. No fever.", h2)
         }
+    }
+}
+
+class CpuInfoTest {
+    @Test fun countsBigCoresOnly() {
+        // 1 prime + 3 big + 4 little (e.g. Snapdragon 8 Gen 2)
+        assertEquals(4, ai.patnub.engine.CpuInfo.pick(listOf(1_800_000, 1_800_000, 1_800_000, 1_800_000, 2_800_000, 2_800_000, 2_800_000, 3_200_000).map { it.toLong() }, 8))
+        // 2 big + 6 little with close clocks (e.g. Snapdragon 695: 2.21 GHz vs 1.80 GHz)
+        assertEquals(2, ai.patnub.engine.CpuInfo.pick(listOf(1_804_800L, 1_804_800L, 1_804_800L, 1_804_800L, 1_804_800L, 1_804_800L, 2_208_000L, 2_208_000L), 8))
+        assertEquals(2, ai.patnub.engine.CpuInfo.pickByCapacity(listOf(439L, 439L, 439L, 439L, 439L, 439L, 1024L, 1024L), 8))
+        assertEquals(4, ai.patnub.engine.CpuInfo.pick(emptyList(), 8))
+        assertEquals(2, ai.patnub.engine.CpuInfo.pick(listOf(2_000_000L, 2_000_000L, 1_000_000L, 1_000_000L), 4))
+        assertEquals(4, ai.patnub.engine.CpuInfo.pick(listOf(2_000_000L, 2_000_000L, 2_000_000L, 2_000_000L), 4))
     }
 }
 

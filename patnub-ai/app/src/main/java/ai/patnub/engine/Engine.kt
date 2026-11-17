@@ -55,6 +55,12 @@ interface Engine : AutoCloseable {
         raw: Boolean = false,
     ): Flow<String>
 
+    /**
+     * Processes [text] into the model's cache without generating, so prompts that start with it
+     * (the fixed instructions) skip that work. Also warms the weights up after loading.
+     */
+    suspend fun prefill(text: String) {}
+
     /** `msr_engine_cancel`: stops the running generation. Safe from any thread; no-op when idle. */
     fun cancel()
 
@@ -86,6 +92,8 @@ data class EngineConfig(
     val readThreads: Int = 4,
     /** Two-slot async layer prefetch. Off means serial refill. */
     val prefetch: Boolean = true,
+    /** Allow CPU weight repacking for faster Q4 matmul on phones with plenty of RAM. */
+    val repack: Boolean = false,
 )
 
 /**
@@ -119,6 +127,8 @@ data class EngineStats(
      * ordinary Android apps; fall back to Android's PowerManager thermal API there.
      */
     val thermalC: Int?,
+    /** Prompt tokens served from the cache instead of being processed again. */
+    val reusedPromptTokens: Long = 0,
 ) {
     /** Same formula as `msr-cli`. */
     val generateTokensPerSecond: Double
@@ -166,7 +176,7 @@ enum class ChatFormat {
     GEMMA4;
 
     private companion object {
-        const val GEMMA3_ACK = "Understood. I am patnub. I will follow these rules and reply only to the patient."
+        const val GEMMA3_ACK = "Understood. I am patnub. I will reply directly to the patient."
     }
 
     /** Media marker mtmd replaces with the photo's tokens. */
@@ -176,15 +186,16 @@ enum class ChatFormat {
      * [system] then alternating turns (first is the patient), ending with an open model turn.
      * [lastHasImage] puts the photo marker at the start of the last patient turn.
      */
+    /** The fixed start every prompt shares (instructions); cached once after the model loads. */
+    fun prefix(system: String): String =
+        if (this == GEMMA4) "<|turn>system\n$system<turn|>\n"
+        else "<start_of_turn>user\n$system<end_of_turn>\n<start_of_turn>model\n$GEMMA3_ACK<end_of_turn>\n"
+
     fun format(system: String, turns: List<Pair<Boolean, String>>, lastHasImage: Boolean): String = buildString {
         val (open, close) = if (this@ChatFormat == GEMMA3) "<start_of_turn>" to "<end_of_turn>" else "<|turn>" to "<turn|>"
-        if (this@ChatFormat == GEMMA4) {
-            append("${open}system\n$system$close\n")
-        } else {
-            // Gemma 3 has no system role. Merged into the patient's first message, MedGemma restates
-            // the rules instead of answering; as an acknowledged opening exchange it follows them.
-            append("${open}user\n$system$close\n${open}model\n$GEMMA3_ACK$close\n")
-        }
+        // Gemma 3 has no system role. Merged into the patient's first message, MedGemma restates
+        // the rules instead of answering; as an acknowledged opening exchange it follows them.
+        append(prefix(system))
         turns.forEachIndexed { i, (fromPatient, text) ->
             val role = if (fromPatient) "user" else "model"
             var body = text

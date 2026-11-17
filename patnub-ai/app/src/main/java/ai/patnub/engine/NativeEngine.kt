@@ -23,6 +23,7 @@ class NativeEngine : Engine {
     @Volatile private var handle = 0L
     @Volatile private var images = false
     private val generating = AtomicBoolean(false)
+    private val prefilling = AtomicBoolean(false)
 
     override val supportsImages: Boolean get() = images
 
@@ -42,7 +43,7 @@ class NativeEngine : Engine {
             handle = withContext(Dispatchers.IO) {
                 nativeLoad(
                     config.modelPath, config.visionPath.takeUnless { config.streamed }, config.streamed,
-                    config.budgetBytes, config.contextTokens, config.threads, config.readThreads, config.prefetch,
+                    config.budgetBytes, config.contextTokens, config.threads, config.readThreads, config.prefetch, config.repack,
                 )
             }
             images = nativeSupportsImages(handle)
@@ -64,6 +65,10 @@ class NativeEngine : Engine {
         if (maxTokens < 1) throw EngineException(EngineError.INVALID_ARGUMENT, "maxTokens must be at least 1")
         val h = handle
         if (h == 0L || _state.value !is EngineState.Ready) throw EngineException(EngineError.NOT_LOADED)
+        if (prefilling.get()) {
+            nativeCancel(h)
+            while (prefilling.get()) kotlinx.coroutines.delay(10)
+        }
         if (!generating.compareAndSet(false, true)) throw EngineException(EngineError.BUSY)
         _state.value = EngineState.Generating
 
@@ -95,6 +100,18 @@ class NativeEngine : Engine {
         awaitClose { if (worker.isAlive) nativeCancel(h) }
     }.flowOn(Dispatchers.IO)
 
+    override suspend fun prefill(text: String) {
+        val h = handle
+        if (h == 0L || _state.value != EngineState.Ready || !generating.compareAndSet(false, true)) return
+        prefilling.set(true)
+        try {
+            withContext(Dispatchers.IO) { nativePrefill(h, text) }
+        } finally {
+            prefilling.set(false)
+            generating.set(false)
+        }
+    }
+
     override fun cancel() {
         handle.takeIf { it != 0L }?.let(::nativeCancel)
     }
@@ -106,7 +123,8 @@ class NativeEngine : Engine {
             promptTokens = v[0], generatedTokens = v[1], ttftMs = v[2], promptMs = v[3], generateMs = v[4],
             budgetBytes = v[5], residentWeightBytes = v[6], peakWeightBytes = v[7], readBytes = v[8],
             streamedLayers = v[9].toInt(), streamSlots = 0, prefetch = v[9] > 0, readThreads = 0,
-            peakVmHwmKb = v[10].takeIf { it >= 0 }, vmRssKb = v[11].takeIf { it >= 0 }, thermalC = v[12].toInt().takeIf { it >= 0 },
+            peakVmHwmKb = v[10].takeIf { it >= 0 }, vmRssKb = v[11].takeIf { it >= 0 }, thermalC = null,
+            reusedPromptTokens = v[12],
         )
     }
 
@@ -129,12 +147,13 @@ class NativeEngine : Engine {
 
         @JvmStatic private external fun nativeLoad(
             model: String, vision: String?, streamed: Boolean, budget: Long,
-            ctxTokens: Int, threads: Int, readThreads: Int, prefetch: Boolean,
+            ctxTokens: Int, threads: Int, readThreads: Int, prefetch: Boolean, repack: Boolean,
         ): Long
         @JvmStatic private external fun nativeGenerate(
             handle: Long, prompt: String, image: String?, raw: Boolean, maxTokens: Int, temperature: Float, seed: Int, sink: TokenSink,
         ): Int
         @JvmStatic private external fun nativeFamily(handle: Long): Int
+        @JvmStatic private external fun nativePrefill(handle: Long, text: String): Int
         @JvmStatic private external fun nativeCancel(handle: Long)
         @JvmStatic private external fun nativeLastError(handle: Long): String
         @JvmStatic private external fun nativeSupportsImages(handle: Long): Boolean

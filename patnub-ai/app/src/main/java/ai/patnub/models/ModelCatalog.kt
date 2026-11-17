@@ -92,5 +92,14 @@ object ModelCatalog {
 
     fun recommendedFor(totalRamBytes: Long): ModelPackage = packages.first { it.tier == tierFor(totalRamBytes) }
 
+    /**
+     * Weight repacking speeds up Q4 matrix math at the cost of extra un-evictable RAM.
+     * Safe for Gemma 4 (Q4_0, +~360 MB) on 6 GB+ phones and MedGemma (Q4_K_M, +~1.5 GB) on 10 GB+.
+     */
+    fun shouldRepack(pkg: ModelPackage, totalRamBytes: Long): Boolean {
+        if (pkg.streamed) return false
+        return if (pkg.medical) totalRamBytes >= 9L * GiB else totalRamBytes >= 9L * GiB / 2
+    }
+
     fun byId(id: String): ModelPackage? = packages.firstOrNull { it.id == id }
 }

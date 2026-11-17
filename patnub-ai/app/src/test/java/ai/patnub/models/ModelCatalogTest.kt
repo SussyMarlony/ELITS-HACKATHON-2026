@@ -33,4 +33,15 @@ class ModelCatalogTest {
     @Test fun streamedPackageHasNoVision() {
         ModelCatalog.packages.filter { it.streamed }.forEach { assertEquals(null, it.vision) }
     }
+
+    @Test fun repackOnlyWhenMemoryHeadroomFits() {
+        val gemma4 = ModelCatalog.byId("gemma4-e2b")!!
+        val medStreamed = ModelCatalog.byId("medgemma-4b-streamed")!!
+        val medResident = ModelCatalog.byId("medgemma-4b-resident")!!
+        assertFalse(ModelCatalog.shouldRepack(gemma4, (3.6 * gib).toLong()))
+        assertTrue(ModelCatalog.shouldRepack(gemma4, (5.5 * gib).toLong()))
+        assertFalse(ModelCatalog.shouldRepack(medStreamed, 12L * gib))
+        assertFalse(ModelCatalog.shouldRepack(medResident, (7.3 * gib).toLong()))
+        assertTrue(ModelCatalog.shouldRepack(medResident, 11L * gib))
+    }
 }

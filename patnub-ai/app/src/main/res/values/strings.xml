@@ -84,8 +84,9 @@
     <string name="assistant_hint">Ask a health question</string>
     <string name="assistant_send">Send</string>
     <string name="emergency_title">This may be an emergency</string>
-    <string name="emergency_body">Go to the nearest hospital or Rural Health Unit now, or call for help. Do not wait for an answer here.</string>
+    <string name="emergency_body">Go to the nearest Rural Health Unit (RHU), barangay health station, or hospital emergency room now, or ask someone nearby to take you. Do not wait for an answer here.</string>
     <string name="emergency_call">Call 911</string>
+    <string name="emergency_find_rhu">Find nearest RHU or hospital</string>
     <string name="ask_prescriber">Please don’t change how you take your medicine without asking the clinician who prescribed it. Contact your clinic. If you feel very unwell, get care now.</string>
     <string name="ask_prescriber_named">Please don’t change how you take your medicine without asking %1$s, who prescribed it. Contact your clinic. If you feel very unwell, get care now.</string>
     <string name="no_match">I don’t have reviewed information on this yet, and the AI model isn’t installed, so I can’t reason about it with you. To help your clinician, note: when it started, how bad it is from 0 to 10, exactly where, what makes it better or worse, and any other symptoms like fever, swelling or numbness. Get care today if it is severe, getting worse, or you can’t use the body part.</string>
@@ -170,4 +171,6 @@
     <string name="assistant_off_topic">I can only help with health questions. Is something bothering you, or do you have a question about a medicine or a visit?</string>
     <string name="assistant_failed">Something went wrong while answering. Please try again.</string>
     <string name="assistant_empty_answer">I couldn’t finish an answer that time. Please ask again, or ask a shorter question.</string>
+    <string name="assistant_reading">Reading your question…</string>
+    <string name="assistant_reading_elapsed">Reading your question… %1$d s</string>
 </resources>

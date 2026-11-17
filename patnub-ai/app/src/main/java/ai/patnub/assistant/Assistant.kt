@@ -60,6 +60,11 @@ class Assistant(private val db: PatnubDatabase, private val engine: Engine) {
 
     fun cancel() = engine.cancel()
 
+    /** Caches the fixed instructions after the model loads, so the first question starts faster. */
+    suspend fun prewarm() {
+        engine.chatFormat?.let { engine.prefill(PromptBuilder.warmup(it)) }
+    }
+
     /**
      * [selfId] is the phone owner. It is never taken from the question text.
      * [history] is the conversation so far (oldest first), used for follow-up answers.

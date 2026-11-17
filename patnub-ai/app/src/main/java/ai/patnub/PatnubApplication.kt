@@ -7,8 +7,10 @@ import ai.patnub.engine.Engine
 import ai.patnub.engine.EngineConfig
 import ai.patnub.engine.EngineException
 import ai.patnub.engine.EngineState
+import ai.patnub.engine.CpuInfo
 import ai.patnub.engine.NativeEngine
 import ai.patnub.identity.PatientIdentity
+import ai.patnub.models.ModelCatalog
 import ai.patnub.models.ModelStore
 import ai.patnub.transfer.RecordImporter
 import android.app.Application
@@ -61,10 +63,12 @@ class PatnubApplication : Application() {
                         visionPath = p.vision?.let { models.fileFor(it).path },
                         streamed = p.streamed,
                         budgetBytes = p.budgetBytes,
-                        threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 4),
+                        threads = CpuInfo.performanceCores(),
+                        repack = ModelCatalog.shouldRepack(p, models.totalRamBytes),
                     ),
                 )
                 loadedPackageId = p.id
+                assistant.prewarm()
             } catch (e: EngineException) {
                 Log.e(TAG, "Model failed to load", e)
             }
