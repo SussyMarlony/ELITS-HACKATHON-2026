@@ -16,6 +16,7 @@ import ai.patnub.data.local.entity.QrGrantEntity
 import ai.patnub.data.local.entity.UserEntity
 import ai.patnub.data.local.entity.VisitItemEntity
 import android.content.Context
+import androidx.room3.AutoMigration
 import androidx.room3.ColumnTypeConverters
 import androidx.room3.Database
 import androidx.room3.Room
@@ -38,8 +39,10 @@ import kotlinx.coroutines.Dispatchers
         VisitItemEntity::class,
         AuditEventEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
+    // v2: source_url and reviewed_by on knowledge chunks and medicines (verbatim, sourced content).
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
 )
 @ColumnTypeConverters(Converters::class)
 abstract class PatnubDatabase : RoomDatabase() {

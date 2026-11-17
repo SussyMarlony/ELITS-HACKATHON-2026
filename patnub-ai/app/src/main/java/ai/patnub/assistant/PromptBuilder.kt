@@ -17,7 +17,7 @@ object PromptBuilder {
         }
         appendLine("Keep general information separate from the patient's own doctor record. If the context does not answer, say so and suggest seeing their clinician.")
         val context = StringBuilder()
-        general.forEach { context.appendLine("[General · ${it.chunk.publisher}] ${it.chunk.contentText}") }
+        // The patient's own clinician record goes first so the length cap can never cut it off.
         records.forEach { r ->
             context.append("[Your doctor's record · ${r.encounterDate}] ")
             r.assessment?.let { context.append("Assessment: $it. ") }
@@ -26,6 +26,8 @@ object PromptBuilder {
             r.followUp?.let { context.append("Follow-up: $it.") }
             context.appendLine()
         }
+        val perPassage = ((MAX_CONTEXT_CHARS - context.length) / general.size.coerceAtLeast(1)).coerceAtLeast(200)
+        general.forEach { context.appendLine("[General · ${it.chunk.publisher}] ${it.chunk.contentText.replace("\n\n", " ").take(perPassage)}") }
         appendLine("Context:")
         appendLine(context.toString().take(MAX_CONTEXT_CHARS))
         appendLine("Question: $question")

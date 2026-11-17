@@ -2,7 +2,7 @@ package ai.patnub.identity
 
 import ai.patnub.data.local.PatnubDatabase
 import ai.patnub.data.local.entity.UserEntity
-import ai.patnub.data.local.seedDemoData
+import ai.patnub.data.local.BundledContent
 import ai.patnub.data.local.entity.UserRole
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
@@ -31,7 +31,7 @@ sealed interface SelfProfile {
  * X25519 key pair. Clinics encrypt records to the public key, shown in the check-in code.
  * The private key is stored encrypted with an AES key that never leaves Android Keystore.
  */
-class PatientIdentity(context: Context, private val db: PatnubDatabase) {
+class PatientIdentity(private val context: Context, private val db: PatnubDatabase) {
     private val prefs = context.getSharedPreferences("identity", Context.MODE_PRIVATE)
 
     private val _profile = MutableStateFlow<SelfProfile>(SelfProfile.Loading)
@@ -82,7 +82,7 @@ class PatientIdentity(context: Context, private val db: PatnubDatabase) {
     /** Debug-only demo reset: wipes the profile, keys and every local record. */
     suspend fun resetForDemo() {
         db.clearAllTables()
-        db.seedDemoData()
+        BundledContent.install(context, db, force = true)
         prefs.edit(commit = true) { clear() }
         KeyStore.getInstance(KEYSTORE).apply { load(null) }.deleteEntry(ALIAS)
         _profile.value = SelfProfile.Missing

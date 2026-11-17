@@ -9,8 +9,11 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface MedicationReferenceDao {
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertOrIgnore(meds: List<MedicationReferenceEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun replaceAll(meds: List<MedicationReferenceEntity>)
+
+    @Query("DELETE FROM medication_references")
+    suspend fun deleteAll()
 
     @Query("SELECT * FROM medication_references ORDER BY name")
     fun observeAll(): Flow<List<MedicationReferenceEntity>>

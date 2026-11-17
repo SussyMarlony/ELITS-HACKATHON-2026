@@ -157,4 +157,8 @@
     <string name="models_restart">Restart patnub</string>
     <string name="models_load_failed">The model could not start: %1$s</string>
     <string name="models_privacy">The model runs on this phone. After download, nothing you ask or photograph leaves the phone.</string>
+    <string name="answer_unreviewed">Reference text is from MedlinePlus and has not yet been reviewed by a clinician for this app.</string>
+    <string name="med_verbatim">Copied word for word from the official drug label. Strengths and brands in the Philippines may differ.</string>
+    <string name="med_unreviewed">Not yet reviewed by a clinician for this app.</string>
+    <string name="med_open_source">Open the full label</string>
 </resources>

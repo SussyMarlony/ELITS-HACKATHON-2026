@@ -1,0 +1,24 @@
+{
+  "medlineplus": {
+    "xml": "https://medlineplus.gov/xml/mplus_topics_2026-11-17.xml",
+    "topics": [
+      "High Blood Pressure", "Low Blood Pressure", "Headache", "Dizziness and Vertigo", "Fever",
+      "Diabetes Type 2", "Dehydration", "Diarrhea", "Dengue", "Asthma", "Tuberculosis", "Pneumonia",
+      "Common Cold", "Flu", "Sore Throat", "Cough", "Urinary Tract Infections", "Anemia",
+      "Heart Attack", "Stroke", "Wounds and Injuries"
+    ]
+  },
+  "fda_labels": [
+    {"name": "Amlodipine", "set_id": "ac0dd8fb-ebe1-4d02-bd0d-4f979c6e3608"},
+    {"name": "Losartan", "set_id": "16a6a582-eb4d-41bc-9d49-fc1d4117b29a"},
+    {"name": "Metformin", "set_id": "0230a3c3-34cf-478b-88c3-4d96e5300018"},
+    {"name": "Amoxicillin", "set_id": "d37f2e3c-01f0-4a81-a46f-1615b82e2499"},
+    {"name": "Cotrimoxazole", "set_id": "3ef62512-0dc3-4821-9b60-6b375841c4c0"},
+    {"name": "Paracetamol", "set_id": "43308b23-7d4f-4e4f-a497-af71920d86aa"},
+    {"name": "Ibuprofen", "set_id": "bf7d0929-a7d5-4164-9c24-566eddcd6489"},
+    {"name": "Mefenamic acid", "set_id": "d15733a9-d5fd-4d5f-86ce-e7ed8c706c7f"},
+    {"name": "Cetirizine", "set_id": "03c0a599-072a-10ef-e063-6394a90a9698"},
+    {"name": "Omeprazole", "set_id": "5ceaec04-3ca3-4c7c-9184-51a42686a595"},
+    {"name": "Salbutamol", "set_id": "5d62969b-2ad9-6cf0-e063-6394a90ac2f0"}
+  ]
+}

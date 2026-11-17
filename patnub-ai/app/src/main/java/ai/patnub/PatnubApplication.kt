@@ -2,7 +2,7 @@ package ai.patnub
 
 import ai.patnub.assistant.Assistant
 import ai.patnub.data.local.PatnubDatabase
-import ai.patnub.data.local.seedDemoData
+import ai.patnub.data.local.BundledContent
 import ai.patnub.engine.Engine
 import ai.patnub.engine.EngineConfig
 import ai.patnub.engine.EngineException
@@ -43,7 +43,7 @@ class PatnubApplication : Application() {
         super.onCreate()
         models.refresh()
         appScope.launch {
-            database.seedDemoData()
+            BundledContent.install(this@PatnubApplication, database)
             identity.load()
         }
         startModel()

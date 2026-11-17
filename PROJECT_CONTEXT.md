@@ -21,7 +21,7 @@ Everything runs **on the phone**: a quantized MedGemma model, a local SQLite dat
 
 | Folder / file | Role | Status |
 |---|---|---|
-| **`patnub-ai/`** | **The real project.** Native Android app (Kotlin + Jetpack Compose). Everything ships from here. | App shell only; every screen is a placeholder |
+| **`patnub-ai/`** | **The real project.** Native Android app (Kotlin + Jetpack Compose). Everything ships from here. | Patient app complete for the demo; see patnub-ai/README.md |
 | `doctor-web/` | **Planned.** Clinician offline PWA (Vite + TypeScript), static on Cloudflare Pages. | Not started |
 | `contract/` | **Planned.** Check-in code, certificate and QR payload formats, test vectors, demo license-signing scripts. | Not started |
 | `msr_engine/` | Git submodule: the `libmsr_engine` runtime (replaces `ravin/`). Run `git submodule update --init`. | Empty until initialised |
@@ -64,9 +64,8 @@ cd patnub-ai
 |---|---|
 | `MainActivity.kt` | Entry point, edge-to-edge, sets theme |
 | `ui/PatnubApp.kt` | Root `Scaffold`. Top bar has a Patient/Doctor segmented switch (`Role` enum). Bottom nav shown only for Patient. State via `rememberSaveable`. |
-| `ui/patient/PatientScreens.kt` | `PatientTab` (Assistant, Records, Scan, Medicines, Visits), `PatientNavigationBar`, `PatientScreen`. Placeholders. |
-| `ui/doctor/DoctorScreens.kt` | `DoctorStep` (Write note, Review AI draft, Issue QR), `DoctorScreen`. Placeholders. |
-| `ui/components/PlaceholderPane.kt` | Shared placeholder composable |
+| `ui/patient/` | Assistant, Records, Scan, Medicines, Visits screens |
+| `content/` (repo root) | Public-domain medical content pipeline (MedlinePlus, FDA labels) |
 | `ui/theme/Color.kt`, `Theme.kt` | Material 3 colours/theme (teal accent, matching the prototype) |
 | `res/` | strings, vector tab icons, adaptive launcher icon, `data_extraction_rules.xml` |
 

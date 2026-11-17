@@ -3,6 +3,7 @@ package ai.patnub.assistant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RedFlagGateTest {
@@ -35,5 +36,13 @@ class RedFlagGateTimingTest {
         repeat(1_000) { RedFlagGate.check(q) }
         val perCallMs = (System.nanoTime() - start) / 1_000.0 / 1_000_000.0
         org.junit.Assert.assertTrue("took $perCallMs ms", perCallMs < 20.0)
+    }
+}
+
+class RedFlagSourcesTest {
+    @Test fun verifiedPhrasesComeFromTheGeneratedSourceList() {
+        assertTrue(RedFlagRules.verified.getValue(RedFlagCategory.CARDIAC_RESPIRATORY).contains("chest pain"))
+        assertEquals(RedFlagCategory.BLEEDING_GI, RedFlagGate.check("Bleeding from the nose or gums since this morning")?.category)
+        assertEquals(RedFlagCategory.ALLERGIC_REACTION, RedFlagGate.check("swelling of the face after my new medicine")?.category)
     }
 }

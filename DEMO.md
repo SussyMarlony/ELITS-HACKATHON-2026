@@ -41,4 +41,5 @@ Demo note:
 
 - Install the AI model before the demo (top bar › Manage AI model): download on Wi-Fi or import
   the files by USB. Without a model the Assistant answers from saved sources and says so.
-- Medical content in the demo is placeholder text, not clinically reviewed.
+- Medical text is copied word for word from MedlinePlus and FDA labels (`content/`), but has not
+  yet been reviewed by a clinician; the app says so on every answer and medicine page.

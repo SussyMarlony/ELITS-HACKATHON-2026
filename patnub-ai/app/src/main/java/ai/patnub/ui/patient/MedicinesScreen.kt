@@ -40,6 +40,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.material3.TextButton
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -106,10 +108,13 @@ private fun Browse(meds: List<MedicationReferenceEntity>, onPick: (MedicationRef
 }
 
 @Composable
-private fun Confirm(s: MedState.Confirm, onConfirm: (MedicationReferenceEntity, String, String) -> Unit, onCancel: () -> Unit, modifier: Modifier) {
+private fun Confirm(s: MedState.Confirm, onConfirm: (MedicationReferenceEntity, String?, String?) -> Unit, onCancel: () -> Unit, modifier: Modifier) {
     var med by remember { mutableStateOf(s.candidates.singleOrNull()) }
     var strength by remember { mutableStateOf(med?.let { MedicineMatcher.strengthsIn(s.ocrText, it).singleOrNull() }) }
     var form by remember { mutableStateOf(med?.forms?.singleOrNull()) }
+    // A label with no listed strengths/forms cannot ask for them; the rest stays mandatory (Spec §4.8).
+    val needStrength = med?.strengths?.isNotEmpty() == true
+    val needForm = med?.forms?.isNotEmpty() == true
     Column(modifier.verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(stringResource(R.string.med_confirm_title), style = MaterialTheme.typography.headlineSmall)
         Text(stringResource(R.string.med_confirm_body), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -118,14 +123,21 @@ private fun Confirm(s: MedState.Confirm, onConfirm: (MedicationReferenceEntity, 
             s.candidates.forEach { c -> FilterChip(med == c, { med = c; strength = null; form = c.forms.singleOrNull() }, { Text(c.name) }) }
         }
         med?.let { m ->
-            Text(stringResource(R.string.med_confirm_strength), fontWeight = FontWeight.Bold)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { m.strengths.forEach { x -> FilterChip(strength == x, { strength = x }, { Text(x) }) } }
-            Text(stringResource(R.string.med_confirm_form), fontWeight = FontWeight.Bold)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { m.forms.forEach { x -> FilterChip(form == x, { form = x }, { Text(x) }) } }
+            if (needStrength) {
+                Text(stringResource(R.string.med_confirm_strength), fontWeight = FontWeight.Bold)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { m.strengths.forEach { x -> FilterChip(strength == x, { strength = x }, { Text(x) }) } }
+            }
+            if (needForm) {
+                Text(stringResource(R.string.med_confirm_form), fontWeight = FontWeight.Bold)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { m.forms.forEach { x -> FilterChip(form == x, { form = x }, { Text(x) }) } }
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.action_cancel)) }
-            Button(enabled = med != null && strength != null && form != null, onClick = { onConfirm(med!!, strength!!, form!!) }) {
+            Button(
+                enabled = med != null && (!needStrength || strength != null) && (!needForm || form != null),
+                onClick = { onConfirm(med!!, strength, form) },
+            ) {
                 Text(stringResource(R.string.med_confirm_ok))
             }
         }
@@ -137,6 +149,7 @@ private fun Detail(db: PatnubDatabase, selfId: String, s: MedState.Detail, onBac
     val records by remember(selfId) { db.clinicalRecordDao().observeIssued(selfId) }.collectAsState(initial = emptyList())
     val clinicians by remember { db.userDao().observeByRole(UserRole.CLINICIAN) }.collectAsState(initial = emptyList())
     val m = s.med
+    val uriHandler = LocalUriHandler.current
     val mine = MedicineMatcher.prescriptionsFor(m, records)
     Column(modifier.verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedButton(onClick = onBack) { Text(stringResource(R.string.med_back)) }
@@ -159,12 +172,17 @@ private fun Detail(db: PatnubDatabase, selfId: String, s: MedState.Detail, onBac
             }
         }
 
-        SectionCard(stringResource(R.string.med_label)) { Text(m.labelInstructions) }
-        SectionCard(stringResource(R.string.med_uses)) { BulletList(m.uses) }
-        SectionCard(stringResource(R.string.med_side_effects)) { BulletList(m.sideEffects) }
-        SectionCard(stringResource(R.string.med_warnings), titleColor = MaterialTheme.colorScheme.error) { BulletList(m.warnings) }
-        SectionCard(stringResource(R.string.med_storage)) { Text(m.storageText) }
+        if (m.labelInstructions.isNotBlank()) SectionCard(stringResource(R.string.med_label)) { Text(m.labelInstructions) }
+        if (m.uses.isNotEmpty()) SectionCard(stringResource(R.string.med_uses)) { BulletList(m.uses) }
+        if (m.sideEffects.isNotEmpty()) SectionCard(stringResource(R.string.med_side_effects)) { BulletList(m.sideEffects) }
+        if (m.warnings.isNotEmpty()) SectionCard(stringResource(R.string.med_warnings), titleColor = MaterialTheme.colorScheme.error) { BulletList(m.warnings) }
+        if (m.storageText.isNotBlank()) SectionCard(stringResource(R.string.med_storage)) { Text(m.storageText) }
+        Text(stringResource(R.string.med_verbatim), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(stringResource(R.string.med_source, m.sourceCitation), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (m.reviewedBy == null) {
+            Text(stringResource(R.string.med_unreviewed), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+        m.sourceUrl?.let { url -> TextButton(onClick = { uriHandler.openUri(url) }) { Text(stringResource(R.string.med_open_source)) } }
         Text(stringResource(R.string.med_no_changes), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

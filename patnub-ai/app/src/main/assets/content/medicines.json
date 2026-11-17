@@ -1,0 +1,306 @@
+[
+ {
+  "med_id": "fda-amlodipine",
+  "name": "Amlodipine",
+  "alias": null,
+  "drug_class": "calcium channel blocker",
+  "strengths": [
+   "2.5 mg",
+   "5 mg",
+   "10 mg"
+  ],
+  "forms": [
+   "Tablet"
+  ],
+  "uses": [
+   "It is used to treat high blood pressure (hypertension) and a type of chest pain called angina."
+  ],
+  "side_effects": [
+   "swelling of your legs or ankles",
+   "tiredness, extreme sleepiness",
+   "stomach pain, nausea",
+   "flushing (hot or warm feeling in your face)"
+  ],
+  "warnings": [
+   "It is rare, but when you first start taking amlodipine besylate or increase your dose, you may have a heart attack or your angina may get worse. If that happens, call your doctor right away or go directly to a hospital emergency room.",
+   "While you are taking amlodipine besylate, do not stop taking your other prescription medicines, including any other blood pressure medicines, without talking to your doctor."
+  ],
+  "storage_text": "Store amlodipine besylate tablets, USP at 20° to 25°C (68° to 77°F), excursions permitted to 15° to 30°C (59° to 86°F) (see USP Controlled Room Temperature).",
+  "label_instructions": "Take amlodipine besylate tablets, USP once a day, with or without food. If you miss a dose, take it as soon as you remember. Do not take amlodipine besylate if it has been more than 12 hours since you missed your last dose. Wait and take the next dose at your regular time.",
+  "source_citation": "U.S. FDA drug label (DailyMed set ac0dd8fb-ebe1-4d02-bd0d-4f979c6e3608, version 34, effective 20261109). US product; check the Philippine pack.",
+  "source_url": "https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=ac0dd8fb-ebe1-4d02-bd0d-4f979c6e3608",
+  "reviewed_by": null
+ },
+ {
+  "med_id": "fda-losartan",
+  "name": "Losartan",
+  "alias": null,
+  "drug_class": "angiotensin receptor blocker (ARB)",
+  "strengths": [
+   "25 mg",
+   "50 mg",
+   "100 mg"
+  ],
+  "forms": [
+   "Tablet"
+  ],
+  "uses": [
+   "alone or with other blood pressure medicines to lower high blood pressure (hypertension)."
+  ],
+  "side_effects": [
+   "dizziness, upper respiratory infection, nasal congestion, and back pain"
+  ],
+  "warnings": [
+   "Losartan potassium tablets can cause harm or death to an unborn baby.",
+   "Symptoms of an allergic reaction are swelling of the face, lips, throat or tongue. Get emergency medical help right away and stop taking losartan potassium tablets.",
+   "Low blood pressure may cause you to feel faint or dizzy. Lie down if you feel faint or dizzy. Call your doctor right away."
+  ],
+  "storage_text": "Store losartan potassium tablets at 59°F to 86°F (15°C to 30°C).",
+  "label_instructions": "Losartan potassium tablets can be taken with or without food. If you miss a dose, take it as soon as you remember. If it is close to your next dose, do not take the missed dose. Just take the next dose at your regular time.",
+  "source_citation": "U.S. FDA drug label (DailyMed set 16a6a582-eb4d-41bc-9d49-fc1d4117b29a, version 8, effective 20261109). US product; check the Philippine pack.",
+  "source_url": "https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=16a6a582-eb4d-41bc-9d49-fc1d4117b29a",
+  "reviewed_by": null
+ },
+ {
+  "med_id": "fda-metformin",
+  "name": "Metformin",
+  "alias": null,
+  "drug_class": "biguanide",
+  "strengths": [
+   "500 mg",
+   "850 mg"
+  ],
+  "forms": [
+   "Tablet"
+  ],
+  "uses": [
+   "adjunct to diet and exercise to improve glycemic control in adults and pediatric patients 10 years of age and older with type 2 diabetes mellitus"
+  ],
+  "side_effects": [
+   "diarrhea, nausea/vomiting, flatulence, asthenia, indigestion, abdominal discomfort, and headache"
+  ],
+  "warnings": [
+   "Lactic acidosis is a medical emergency and must be treated in a hospital.",
+   "Do not drink a lot of alcoholic drinks while taking metformin hydrochloride tablets"
+  ],
+  "storage_text": "Store metformin hydrochloride tablets at 68° to 77°F (20° to 25°C).",
+  "label_instructions": "Metformin hydrochloride tablets should be taken with meals to help lessen an upset stomach side effect. Swallow metformin hydrochloride tablets whole. If you miss a dose of metformin hydrochloride tablets, take your next dose as prescribed unless your healthcare provider tells you differently. Do not take an extra dose the next day.",
+  "source_citation": "U.S. FDA drug label (DailyMed set 0230a3c3-34cf-478b-88c3-4d96e5300018, version 20, effective 20261109). US product; check the Philippine pack.",
+  "source_url": "https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=0230a3c3-34cf-478b-88c3-4d96e5300018",
+  "reviewed_by": null
+ },
+ {
+  "med_id": "fda-amoxicillin",
+  "name": "Amoxicillin",
+  "alias": null,
+  "drug_class": "penicillin class drug product",
+  "strengths": [
+   "250 mg",
+   "500 mg"
+  ],
+  "forms": [
+   "Capsule"
+  ],
+  "uses": [
+   "Upper Respiratory Tract Infections of the Ear, Nose, and Throat",
+   "Patients should be counseled that antibacterial drugs, including amoxicillin, should only be used to treat or prevent bacterial infections."
+  ],
+  "side_effects": [
+   "diarrhea, rash, vomiting, and nausea"
+  ],
+  "warnings": [
+   "amoxicillin contains a penicillin class drug product that can cause allergic reactions in some individuals",
+   "Instruct patients to stop taking amoxicillin immediately and promptly report the first signs or symptoms of skin rash, mucosal lesions, or any other sign of hypersensitivity"
+  ],
+  "storage_text": "Store at 20° to 25°C (68° to 77°F); excursions permitted to 15° to 30°C (59° to 86°F) [see USP Controlled Room Temperature].",
+  "label_instructions": "Advise patients that amoxicillin may be taken every 8 hours or every 12 hours, depending on the dose prescribed.",
+  "source_citation": "U.S. FDA drug label (DailyMed set d37f2e3c-01f0-4a81-a46f-1615b82e2499, version 24, effective 20261109). US product; check the Philippine pack.",
+  "source_url": "https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=d37f2e3c-01f0-4a81-a46f-1615b82e2499",
+  "reviewed_by": null
+ },
+ {
+  "med_id": "fda-cotrimoxazole",
+  "name": "Cotrimoxazole",
+  "alias": "Sulfamethoxazole and trimethoprim",
+  "drug_class": "antibacterial",
+  "strengths": [
+   "800 mg/160 mg"
+  ],
+  "forms": [
+   "Tablet"
+  ],
+  "uses": [
+   "sulfamethoxazole and trimethoprim tablets should be used only to treat or prevent infections that are proven or strongly suspected to be caused by susceptible bacteria",
+   "They do not treat viral infections (e.g., the common cold)."
+  ],
+  "side_effects": [
+   "The most common adverse reactions are gastrointestinal disturbances (nausea, vomiting, anorexia) and allergic skin reactions (such as rash and urticaria)."
+  ],
+  "warnings": [
+   "Advise patients to stop taking sulfamethoxazole and trimethoprim immediately if they experience any clinical signs such as rash, pharyngitis, fever, arthralgia, cough, chest pain, dyspnea, pallor, purpura or jaundice and to contact their healthcare provider as soon as possible",
+   "Skipping doses or not completing the full course of therapy may (1) decrease the effectiveness of the immediate treatment"
+  ],
+  "storage_text": "Store at 20º to 25ºC (68º to 77ºF); excursions permitted to 15º to 30ºC (59° to 86°F) [see USP Controlled Room Temperature].",
+  "label_instructions": "the medication should be taken exactly as directed",
+  "source_citation": "U.S. FDA drug label (DailyMed set 3ef62512-0dc3-4821-9b60-6b375841c4c0, version 27, effective 20261014). US product; check the Philippine pack.",
+  "source_url": "https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=3ef62512-0dc3-4821-9b60-6b375841c4c0",
+  "reviewed_by": null
+ },
+ {
+  "med_id": "fda-paracetamol",
+  "name": "Paracetamol",
+  "alias": "Acetaminophen",
+  "drug_class": "Pain reliever/fever reducer",
+  "strengths": [],
+  "forms": [
+   "Caplet"
+  ],
+  "uses": [
+   "temporarily relieves minor aches and pains",
+   "temporarily reduces fever"
+  ],
+  "side_effects": [],
+  "warnings": [
+   "Severe liver damage may occur if you take more than 4,000 mg of acetaminophen in 24 hours",
+   "Do not use with any other drug containing acetaminophen (prescription or nonprescription).",
+   "If a skin reaction occurs, stop use and seek medical help right away.",
+   "fever gets worse or lasts more than 3 days"
+  ],
+  "storage_text": "store between 20-25°C (68-77°F)",
+  "label_instructions": "do not take more than 6 caplets in 24 hours, unless directed by a doctor children under 12 years ask a doctor",
+  "source_citation": "U.S. FDA drug label (DailyMed set 43308b23-7d4f-4e4f-a497-af71920d86aa, version 5, effective 20261110). US product; check the Philippine pack.",
+  "source_url": "https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=43308b23-7d4f-4e4f-a497-af71920d86aa",
+  "reviewed_by": null
+ },
+ {
+  "med_id": "fda-ibuprofen",
+  "name": "Ibuprofen",
+  "alias": null,
+  "drug_class": "Pain reliever/fever reducer",
+  "strengths": [],
+  "forms": [
+   "Tablet"
+  ],
+  "uses": [
+   "temporarily relieves minor aches and pains",
+   "temporarily reduces fever"
+  ],
+  "side_effects": [],
+  "warnings": [
+   "This product contains an NSAID, which may cause severe stomach bleeding.",
+   "Ibuprofen may cause a severe allergic reaction, especially in people allergic to aspirin."
+  ],
+  "storage_text": "store between 20°-25°C (68°-77°F)",
+  "label_instructions": "take 1 tablet every 4 to 6 hours while symptoms persist do not exceed 6 tablets in 24 hours, unless directed by a doctor",
+  "source_citation": "U.S. FDA drug label (DailyMed set bf7d0929-a7d5-4164-9c24-566eddcd6489, version 18, effective 20261104). US product; check the Philippine pack.",
+  "source_url": "https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=bf7d0929-a7d5-4164-9c24-566eddcd6489",
+  "reviewed_by": null
+ },
+ {
+  "med_id": "fda-mefenamic-acid",
+  "name": "Mefenamic acid",
+  "alias": null,
+  "drug_class": "nonsteroidal anti-inflammatory drug",
+  "strengths": [
+   "250 mg"
+  ],
+  "forms": [
+   "Capsule"
+  ],
+  "uses": [
+   "For management of mild to moderate pain in patient 14 years of age and older, when therapy will not exceed one week (7 days).",
+   "For treatment of primary dysmenorrhea."
+  ],
+  "side_effects": [
+   "Abdominal pain, constipation, diarrhea, dyspepsia, flatulence, gross bleeding/perforation, heartburn, nausea, GI ulcers (gastric/duodenal), vomiting"
+  ],
+  "warnings": [
+   "Advise patients to be alert for the symptoms of cardiovascular thrombotic events, including chest pain, shortness of breath, weakness, or slurring of speech, and to report any of these symptoms to their healthcare provider immediately"
+  ],
+  "storage_text": "Store at 25°C (77°F); excursions permitted to 15° to 30°C (59° to 86°F) [see USP Controlled Room Temperature].",
+  "label_instructions": "",
+  "source_citation": "U.S. FDA drug label (DailyMed set d15733a9-d5fd-4d5f-86ce-e7ed8c706c7f, version 13, effective 20260420). US product; check the Philippine pack.",
+  "source_url": "https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=d15733a9-d5fd-4d5f-86ce-e7ed8c706c7f",
+  "reviewed_by": null
+ },
+ {
+  "med_id": "fda-cetirizine",
+  "name": "Cetirizine",
+  "alias": null,
+  "drug_class": "Antihistamine",
+  "strengths": [
+   "10 mg",
+   "5 mg"
+  ],
+  "forms": [
+   "Tablet"
+  ],
+  "uses": [
+   "temporarily relieves these symptoms due to hay fever or other upper respiratory allergies"
+  ],
+  "side_effects": [
+   "drowsiness may occur"
+  ],
+  "warnings": [
+   "Ask a doctor before use if you have liver or kidney disease.",
+   "avoid alcoholic drinks",
+   "be careful when driving a motor vehicle or operating machinery"
+  ],
+  "storage_text": "store between 20 - 25°C (68 - 77°F)",
+  "label_instructions": "one 10 mg tablet once daily; do not take more than one 10 mg tablet in 24 hours.",
+  "source_citation": "U.S. FDA drug label (DailyMed set 03c0a599-072a-10ef-e063-6394a90a9698, version 15, effective 20261103). US product; check the Philippine pack.",
+  "source_url": "https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=03c0a599-072a-10ef-e063-6394a90a9698",
+  "reviewed_by": null
+ },
+ {
+  "med_id": "fda-omeprazole",
+  "name": "Omeprazole",
+  "alias": null,
+  "drug_class": "Acid reducer",
+  "strengths": [],
+  "forms": [
+   "Tablet"
+  ],
+  "uses": [
+   "treats frequent heartburn (occurs 2 or more days a week)",
+   "this drug may take 1 to 4 days for full effect"
+  ],
+  "side_effects": [],
+  "warnings": [
+   "chest pain or shoulder pain with shortness of breath; sweating; pain spreading to arms, neck or shoulders; or lightheadedness",
+   "These may be signs of a serious condition. See your doctor.",
+   "do not use for more than 14 days unless directed by your doctor"
+  ],
+  "storage_text": "store at 20-25°C (68-77°F) and protect from moisture",
+  "label_instructions": "swallow 1 tablet with a glass of water before eating in the morning do not take more than 1 tablet a day",
+  "source_citation": "U.S. FDA drug label (DailyMed set 5ceaec04-3ca3-4c7c-9184-51a42686a595, version 9, effective 20261030). US product; check the Philippine pack.",
+  "source_url": "https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=5ceaec04-3ca3-4c7c-9184-51a42686a595",
+  "reviewed_by": null
+ },
+ {
+  "med_id": "fda-salbutamol",
+  "name": "Salbutamol",
+  "alias": "Albuterol",
+  "drug_class": "Albuterol Inhalation Solution",
+  "strengths": [
+   "2.5 mg/3 mL"
+  ],
+  "forms": [
+   "Inhalation solution"
+  ],
+  "uses": [
+   "relief of bronchospasm in patients 2 years of age and older with reversible obstructive airway disease and acute attacks of bronchospasm"
+  ],
+  "side_effects": [
+   "tremors (20%), dizziness (7%), nervousness (4%), headache (3%), insomnia (1%)"
+  ],
+  "warnings": [
+   "Use only as directed by your physician. More frequent administration or higher doses are not recommended."
+  ],
+  "storage_text": "Store in pouch until time of use.",
+  "label_instructions": "Breathe as calmly, deeply and evenly as possible until no more mist is formed in the nebulizer chamber (about 5 to 15 minutes).",
+  "source_citation": "U.S. FDA drug label (DailyMed set 5d62969b-2ad9-6cf0-e063-6394a90ac2f0, version 1, effective 20261009). US product; check the Philippine pack.",
+  "source_url": "https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=5d62969b-2ad9-6cf0-e063-6394a90ac2f0",
+  "reviewed_by": null
+ }
+]

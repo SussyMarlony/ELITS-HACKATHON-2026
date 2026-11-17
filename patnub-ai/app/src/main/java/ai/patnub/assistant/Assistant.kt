@@ -25,8 +25,11 @@ sealed interface Reply {
     /** A photo question while no model that reads photos is loaded. */
     data object NeedsModel : Reply
 
-    /** [text] streams pieces. [fallback] when no model ran and the text comes from the sources. */
-    data class Answer(val text: Flow<String>, val sources: List<Source>, val fallback: Boolean) : Reply
+    /**
+     * [text] streams pieces. [fallback] when no model ran and the text comes from the sources.
+     * [unreviewed] when a cited reference passage has no clinician sign-off yet.
+     */
+    data class Answer(val text: Flow<String>, val sources: List<Source>, val fallback: Boolean, val unreviewed: Boolean = false) : Reply
 }
 
 /**
@@ -62,17 +65,17 @@ class Assistant(private val db: PatnubDatabase, private val engine: Engine) {
         // A photo question can stand on its own; a text question needs a reviewed source.
         if (imagePath == null && general.isEmpty() && personal.isEmpty()) return Reply.NoMatch
 
-        val sources = general.map { Source(it.chunk.publisher, fromClinician = false) } +
+        val sources = general.map { Source(it.chunk.sourceTitle, fromClinician = false) }.distinct() +
             personal.map { Source(clinicianLabel(it), fromClinician = true) }
         val fallbackText = fallback(general, personal)
 
         if (engine.state.value != EngineState.Ready) {
-            return Reply.Answer(flowOf(fallbackText), sources, fallback = true)
+            return Reply.Answer(flowOf(fallbackText), sources, fallback = true, unreviewed = general.any { it.chunk.reviewedBy == null })
         }
         val prompt = PromptBuilder.build(question, general, personal, withImage = imagePath != null)
         val stream = engine.generate(prompt, maxTokens = MAX_TOKENS, imagePath = imagePath)
             .catch { e -> if (e is EngineException && fallbackText.isNotBlank()) emit(fallbackText) else throw e }
-        return Reply.Answer(stream, sources, fallback = false)
+        return Reply.Answer(stream, sources, fallback = false, unreviewed = general.any { it.chunk.reviewedBy == null })
     }
 
     private suspend fun clinicianLabel(r: ClinicalRecordEntity): String =
@@ -97,7 +100,7 @@ class Assistant(private val db: PatnubDatabase, private val engine: Engine) {
                 r.followUp?.let { append("$it. ") }
                 append("\n\n")
             }
-            general.firstOrNull()?.let { append("General information (${it.chunk.publisher}): ${it.chunk.contentText}") }
+            general.firstOrNull()?.let { append("${it.chunk.sourceTitle}:\n${it.chunk.contentText}") }
         }.trim()
     }
 }

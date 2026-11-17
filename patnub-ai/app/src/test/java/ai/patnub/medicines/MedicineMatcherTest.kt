@@ -1,6 +1,6 @@
 package ai.patnub.medicines
 
-import ai.patnub.data.local.SeedData
+import ai.patnub.data.Bundled
 import ai.patnub.data.local.entity.PrescribedMedication
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -8,17 +8,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MedicineMatcherTest {
-    private val meds = SeedData.medications
+    private val meds = Bundled.medicines
 
     @Test fun ocrTextFindsNameAndStrength() {
-        val text = "BIOGESIC\nParacetamol\n500mg Tablet\n20 tablets"
+        val text = "NORVASC\nAmlodipine\n5mg Tablet\n30 tablets"
         val found = MedicineMatcher.findInText(text, meds)
-        assertEquals(listOf("Paracetamol"), found.map { it.name })
-        assertEquals(listOf("500 mg"), MedicineMatcher.strengthsIn(text, found.single()))
+        assertEquals(listOf("Amlodipine"), found.map { it.name })
+        assertEquals(listOf("5 mg"), MedicineMatcher.strengthsIn(text, found.single()))
     }
 
     @Test fun aliasAndSearch() {
-        assertEquals("Oral Rehydration Salts", MedicineMatcher.findInText("ORS sachet", meds).single().name)
+        assertEquals("Salbutamol", MedicineMatcher.findInText("Albuterol nebule", meds).single().name)
+        assertEquals("Paracetamol", MedicineMatcher.findInText("ACETAMINOPHEN 500 mg", meds).single().name)
         assertEquals(listOf("Amlodipine"), MedicineMatcher.search("amlo", meds).map { it.name })
     }
 

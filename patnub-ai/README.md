@@ -40,7 +40,7 @@ app/src/main/java/ai/patnub/
   data/local/entity/           one entity per table, plus shared enums
   data/local/dao/              type-safe queries (DAOs)
   data/local/Converters.kt     Instant, LocalDate and JSON list column conversions
-  data/local/SeedData.kt       demo knowledge passages (placeholders, not real DOH/WHO/PNF text)
+  data/local/BundledContent.kt loads assets/content/ (MedlinePlus + FDA label text, see ../content/)
   identity/PatientIdentity.kt  the phone owner's profile and X25519 key pair (private key wrapped by Android Keystore)
   ui/onboarding/               first-launch profile form
   transfer/                    check-in code, record QR opener (RecordCodec), importer, trust root;
@@ -138,8 +138,8 @@ Patient-only app (spec v1.2):
   model reads photos), or answers from the retrieved text when no model is installed.
 - **Medicines**: search, or scan packaging (ML Kit text recognition, offline) followed by a
   mandatory name/strength/form confirmation; shows label info apart from the patient’s own
-  prescription and flags strength conflicts without picking one. Seeded medicine data is a
-  placeholder from the prototype, not reviewed PNF content.
+  prescription and flags strength conflicts without picking one. Medicine text is copied word for word
+  from FDA labels (`../content/`), pending clinician review.
 - **Visits**: question suggestions before a visit (editable, saved) and patient-reported recaps
   after one, with dose conflicts against clinician records shown side by side.
 

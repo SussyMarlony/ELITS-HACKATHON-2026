@@ -249,6 +249,7 @@ private fun AnswerBubble(item: ChatItem.Answer) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { r.sources.forEach { SourceChip(it) } }
                     Label(stringResource(R.string.answer_disclaimer))
+                    if (r.unreviewed) Label(stringResource(R.string.answer_unreviewed))
                 }
             }
         }

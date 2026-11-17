@@ -23,6 +23,7 @@ vector), passcode wrapping, rule-based draft parser, dose-change guard.
 
 - On-device runs: camera scanning of the dense record QR, Keystore key creation, end-to-end
   timing (< 90 s), and peak memory (≤ 1,310 MiB) need a real phone and the JNI engine.
-- The red-flag phrases, seeded knowledge passages and medicine data are placeholders that need
+- Medical content is verbatim from MedlinePlus and FDA labels (`content/`, the build fails on any
+  non-verbatim excerpt) but still needs
   clinician review (spec §14, decision 7).
 - No measured clinical evaluation set yet (spec §12.2).

@@ -8,8 +8,11 @@ import androidx.room3.Query
 
 @Dao
 interface KnowledgeChunkDao {
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertOrIgnore(chunks: List<KnowledgeChunkEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun replaceAll(chunks: List<KnowledgeChunkEntity>)
+
+    @Query("DELETE FROM general_knowledge_chunks")
+    suspend fun deleteAll()
 
     /** Collection A. Retired passages are never returned (Spec §4.3). */
     @Query("SELECT * FROM general_knowledge_chunks WHERE status = 'APPROVED'")
