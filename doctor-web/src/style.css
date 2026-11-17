@@ -1,0 +1,31 @@
+/* Colour tokens copied from the alaga-health prototype so both apps look alike. */
+:root {
+  --bg: #f2f2f7; --surface: #fff; --text: #1c1c1e; --text-2: #62626a;
+  --line: rgba(60, 60, 67, .13);
+  --accent: #0e8f7e; --accent-soft: rgba(14, 143, 126, .11); --accent-text: #0a7062;
+  --warn-soft: rgba(214, 158, 46, .15); --warn-text: #8a5a0b;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .04), 0 1px 3px rgba(0, 0, 0, .04);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000; --surface: #1c1c1e; --text: #f5f5f7; --text-2: #a1a1a8;
+    --line: rgba(84, 84, 88, .5);
+    --accent: #2bb59f; --accent-soft: rgba(43, 181, 159, .16); --accent-text: #5fd3bf;
+    --warn-soft: rgba(255, 196, 82, .14); --warn-text: #ffc95c;
+    --shadow-sm: 0 0 0 .5px rgba(255, 255, 255, .06);
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+#app { max-width: 960px; margin: 0 auto; padding: 16px; }
+.top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.top h1 { font-size: 20px; margin: 0; }
+.top img { border-radius: 8px; }
+.pill { font-size: 13px; padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); }
+.pill-off { background: var(--warn-soft); color: var(--warn-text); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 20px; box-shadow: var(--shadow-sm); }
+.card h2 { margin: 0 0 8px; font-size: 18px; }
+.card p { margin: 0; color: var(--text-2); }
