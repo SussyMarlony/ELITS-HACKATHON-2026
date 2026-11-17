@@ -1,6 +1,9 @@
 package ai.patnub.ui
 
 import ai.patnub.R
+import ai.patnub.engine.Engine
+import ai.patnub.engine.FakeEngine
+import ai.patnub.ui.components.EngineStatusPill
 import ai.patnub.ui.doctor.DoctorScreen
 import ai.patnub.ui.doctor.DoctorStep
 import ai.patnub.ui.patient.PatientNavigationBar
@@ -12,7 +15,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -40,14 +42,14 @@ enum class Role(@StringRes val label: Int) {
  * The bottom navigation bar is shown only in the Patient view.
  */
 @Composable
-fun PatnubApp() {
+fun PatnubApp(engine: Engine) {
     var role by rememberSaveable { mutableStateOf(Role.Patient) }
     var patientTab by rememberSaveable { mutableStateOf(PatientTab.Assistant) }
     var doctorStep by rememberSaveable { mutableStateOf(DoctorStep.WriteNote) }
 
     Scaffold(
         topBar = {
-            PatnubTopBar(role = role, onRoleChange = { role = it })
+            PatnubTopBar(engine = engine, role = role, onRoleChange = { role = it })
         },
         bottomBar = {
             if (role == Role.Patient) {
@@ -71,17 +73,12 @@ fun PatnubApp() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PatnubTopBar(role: Role, onRoleChange: (Role) -> Unit) {
+private fun PatnubTopBar(engine: Engine, role: Role, onRoleChange: (Role) -> Unit) {
     TopAppBar(
         title = {
             Column {
                 Text(stringResource(R.string.app_name))
-                // Placeholder for the live libmsr_engine telemetry pill (Phase 1, bridge step).
-                Text(
-                    text = stringResource(R.string.engine_offline),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                EngineStatusPill(engine)
             }
         },
         actions = {
@@ -104,6 +101,6 @@ private fun PatnubTopBar(role: Role, onRoleChange: (Role) -> Unit) {
 @Composable
 private fun PatnubAppPreview() {
     PatnubTheme {
-        PatnubApp()
+        PatnubApp(FakeEngine())
     }
 }

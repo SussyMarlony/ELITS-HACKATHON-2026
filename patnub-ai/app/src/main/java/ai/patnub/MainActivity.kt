@@ -13,7 +13,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             PatnubTheme {
-                PatnubApp()
+                PatnubApp((application as PatnubApplication).engine)
             }
         }
     }

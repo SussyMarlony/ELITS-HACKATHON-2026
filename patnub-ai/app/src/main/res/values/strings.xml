@@ -4,6 +4,11 @@
     <string name="role_patient">Patient</string>
     <string name="role_doctor">Doctor</string>
     <string name="engine_offline">Engine not connected</string>
+    <string name="engine_loading">Engine loading…</string>
+    <string name="engine_ready">Engine ready</string>
+    <string name="engine_generating">Engine generating</string>
+    <string name="engine_failed">Engine failed to load</string>
+    <string name="engine_simulated">SIMULATED</string>
 
     <string name="tab_assistant">Assistant</string>
     <string name="tab_records">Records</string>

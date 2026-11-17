@@ -80,7 +80,9 @@ line in `PatnubApplication` that creates `FakeEngine`.
 ## Current state
 
 Every screen is still a placeholder. The database exists and is seeded with the four
-demo accounts, and the simulated engine loads at startup, but no screen uses either yet.
+demo accounts, and the simulated engine loads at startup. The top bar shows a live engine status pill
+(`ui/components/EngineStatusPill.kt`: state, memory, tok/s, temperature, labelled SIMULATED
+while `FakeEngine` is in use). No other screen uses the database or engine yet.
 
 ## Privacy defaults
 
