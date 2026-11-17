@@ -10,6 +10,7 @@ import ai.patnub.ui.onboarding.OnboardingScreen
 import ai.patnub.ui.components.EngineStatusPill
 import ai.patnub.ui.patient.PatientNavigationBar
 import ai.patnub.ui.patient.PatientScreen
+import ai.patnub.ui.patient.PatientServices
 import ai.patnub.ui.patient.PatientTab
 import ai.patnub.ui.theme.PatnubTheme
 import androidx.compose.foundation.layout.Column
@@ -40,7 +41,7 @@ import kotlinx.coroutines.launch
  * Clinicians use the separate offline web app in `doctor-web/` (spec v1.2).
  */
 @Composable
-fun PatnubApp(engine: Engine, identity: PatientIdentity?) {
+fun PatnubApp(engine: Engine, identity: PatientIdentity?, makeServices: ((selfId: String, checkInCode: String) -> PatientServices)? = null) {
     var patientTab by rememberSaveable { mutableStateOf(PatientTab.Assistant) }
     // Preview has no identity; treat it as an onboarded phone.
     val profile = identity?.profile?.collectAsState()?.value ?: SelfProfile.Loading
@@ -49,6 +50,10 @@ fun PatnubApp(engine: Engine, identity: PatientIdentity?) {
         val user = (profile as? SelfProfile.Ready)?.user
         val pub = identity?.publicKey()
         if (user != null && pub != null) CheckIn.of(user.displayName, user.age ?: 0, user.barangay, pub).encode() else null
+    }
+    val services = remember(checkInCode) {
+        val user = (profile as? SelfProfile.Ready)?.user
+        if (user != null && checkInCode != null) makeServices?.invoke(user.userId, checkInCode) else null
     }
     val debuggable = LocalContext.current.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
@@ -74,7 +79,7 @@ fun PatnubApp(engine: Engine, identity: PatientIdentity?) {
             .padding(innerPadding)
         when (profile) {
             SelfProfile.Missing -> OnboardingScreen(onCreate = { n, a, b -> identity!!.create(n, a, b) }, modifier = modifier)
-            else -> PatientScreen(tab = patientTab, checkInCode = checkInCode, modifier = modifier)
+            else -> PatientScreen(tab = patientTab, services = services, onTab = { patientTab = it }, modifier = modifier)
         }
     }
 }

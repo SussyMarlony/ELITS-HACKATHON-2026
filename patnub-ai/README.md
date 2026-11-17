@@ -42,7 +42,11 @@ app/src/main/java/ai/patnub/
   data/local/SeedData.kt       demo knowledge passages (placeholders, not real DOH/WHO/PNF text)
   identity/PatientIdentity.kt  the phone owner's profile and X25519 key pair (private key wrapped by Android Keystore)
   ui/onboarding/               first-launch profile form
-  transfer/                    Base45 and check-in code (../contract/ format, checked against contract/vectors.json)
+  transfer/                    check-in code, record QR opener (RecordCodec), importer, trust root;
+                               all checked against ../contract/vectors.json
+  assistant/                   red-flag gate, dose-change guard, keyword retrieval, prompt builder, Assistant pipeline
+  ui/patient/                  Assistant chat, Records timeline, Scan (check-in code + record scan, preview, consent)
+  ui/components/QrScanner.kt   CameraX + ML Kit (bundled model, offline)
   ui/components/QrCode.kt      QR rendering (ZXing core)
   ui/PatnubApp.kt              root Scaffold: top bar with engine status pill, bottom tabs (patient-only app; clinicians use ../doctor-web/)
   ui/patient/PatientScreens.kt the 5 Patient tabs (Assistant, Records, Scan, Medicines, Visits)
@@ -82,13 +86,25 @@ line in `PatnubApplication` that creates `FakeEngine`.
 
 ## Current state
 
-Patient-only app (spec v1.2). First launch asks for name, age and barangay, then creates the
-phone's key pair. Debug builds show a "Reset (debug)" button in the top bar that wipes the
-profile, keys and local data for demos. The top bar shows a live engine status pill
-(SIMULATED while `FakeEngine` is in use). The Scan tab shows the phone's check-in code. Other tabs are still placeholders.
+Patient-only app (spec v1.2):
+
+- **Onboarding** creates the phone owner's profile and X25519 key pair.
+- **Scan** shows the check-in code for the clinic, and scans record QR codes from the clinic app.
+  The phone verifies root → license → staff → record, decrypts, shows a preview, and saves only
+  after the patient agrees. Corrected versions replace older ones.
+- **Records** lists saved clinician-approved records.
+- **Assistant**: emergency red flags short-circuit before any model call; dose-change questions
+  are referred to the prescriber; otherwise it retrieves reviewed passages and the patient's own
+  consented records and streams an answer (SIMULATED while `FakeEngine` is in use), or falls
+  back to the retrieved text when the model is not running.
+- Medicines and Visits are still placeholders (Phase 5).
+
+Build note: `/mnt/DEV` was full during development, so builds were run with
+`./gradlew -I ~/.cache/patnub-build/tmpbuild.gradle ...` to put outputs under `~/.cache`.
 
 ## Privacy defaults
 
-- No `INTERNET` permission. The app is meant to run fully offline.
+- No `INTERNET` permission. The app is meant to run fully offline. The manifest strips
+  network permissions that libraries (ML Kit) would otherwise merge in. Only `CAMERA` is requested.
 - `allowBackup="false"` plus `data_extraction_rules.xml` keep app data out of cloud
   backups and device-to-device transfers, since the app will store patient records.

@@ -67,6 +67,9 @@ class PatientIdentity(context: Context, private val db: PatnubDatabase) {
         _profile.value = SelfProfile.Ready(user)
     }
 
+    /** The phone owner's `users.user_id`. Throws before onboarding. */
+    fun selfUserId(): String = checkNotNull(prefs.getString(KEY_USER_ID, null)) { "no profile" }
+
     /** 32-byte X25519 public key, or null before onboarding. */
     fun publicKey(): ByteArray? = prefs.getString(KEY_PUBLIC, null)?.let(::unb64)
 

@@ -52,6 +52,11 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.tink.android)
     implementation(libs.zxing.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    // Bundled model: works offline, no Google Play services needed.
+    implementation(libs.mlkit.barcode.scanning)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

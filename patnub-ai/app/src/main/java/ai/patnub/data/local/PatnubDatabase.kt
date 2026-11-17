@@ -1,5 +1,6 @@
 package ai.patnub.data.local
 
+import ai.patnub.data.local.dao.AuditEventDao
 import ai.patnub.data.local.dao.ClinicalRecordDao
 import ai.patnub.data.local.dao.KnowledgeChunkDao
 import ai.patnub.data.local.dao.PatientConsentDao
@@ -44,6 +45,7 @@ abstract class PatnubDatabase : RoomDatabase() {
     abstract fun knowledgeChunkDao(): KnowledgeChunkDao
     abstract fun clinicalRecordDao(): ClinicalRecordDao
     abstract fun patientConsentDao(): PatientConsentDao
+    abstract fun auditEventDao(): AuditEventDao
 
     companion object {
         const val FILE_NAME = "patnub_local.db"

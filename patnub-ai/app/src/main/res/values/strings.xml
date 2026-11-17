@@ -31,4 +31,44 @@
     <string name="debug_reset">Reset (debug)</string>
     <string name="checkin_title">Your check-in code</string>
     <string name="checkin_body">Show this to the clinic at your visit. It lets them send your records to this phone only.</string>
+
+    <string name="action_cancel">Cancel</string>
+    <string name="action_ok">OK</string>
+    <string name="record_badge">From your clinician</string>
+    <string name="record_untitled">Consultation</string>
+    <string name="record_version">version %1$d</string>
+    <string name="record_meds">Medicines</string>
+    <string name="record_instructions">What to do</string>
+    <string name="record_follow_up">Follow-up</string>
+    <string name="record_warnings">Get emergency care if you have</string>
+    <string name="scan_start">Scan a record from your clinic</string>
+    <string name="scan_instructions">Point the camera at the QR code on the clinic screen.</string>
+    <string name="scan_camera_denied">patnub needs the camera to scan codes. Allow it in your phone settings.</string>
+    <string name="scan_preview_title">Save this record?</string>
+    <string name="scan_preview_body">Check it is yours. If you save it, your assistant can use it to answer your questions.</string>
+    <string name="scan_preview_replaces">This is a corrected version. It replaces version %1$d you saved before.</string>
+    <string name="scan_save">Save to my records</string>
+    <string name="scan_dont_save">Don’t save</string>
+    <string name="scan_rejected_title">Can’t save this code</string>
+    <string name="scan_rejected_not_patnub">This is not a patnub record code.</string>
+    <string name="scan_rejected_tampered">This code could not be verified. It may be damaged or not from a licensed clinic. Ask the clinic to show it again.</string>
+    <string name="scan_rejected_other_phone">This record was made for a different phone. Ask the clinic to scan your check-in code again.</string>
+    <string name="scan_rejected_expired">This code has expired. Ask the clinic to show a new one.</string>
+    <string name="scan_rejected_already">You already saved this record.</string>
+    <string name="scan_saved_title">Saved</string>
+    <string name="scan_saved_body">The record is on this phone now. It works without internet.</string>
+    <string name="scan_view_records">View my records</string>
+
+    <string name="assistant_intro">Ask about symptoms, your medicines or your visits. Answers come from reviewed sources and the records your clinician gave you. This is not a diagnosis.</string>
+    <string name="assistant_hint">Ask a health question</string>
+    <string name="assistant_send">Send</string>
+    <string name="emergency_title">This may be an emergency</string>
+    <string name="emergency_body">Go to the nearest hospital or Rural Health Unit now, or call for help. Do not wait for an answer here.</string>
+    <string name="emergency_call">Call 911</string>
+    <string name="ask_prescriber">Please don’t change how you take your medicine without asking the clinician who prescribed it. Contact your clinic. If you feel very unwell, get care now.</string>
+    <string name="ask_prescriber_named">Please don’t change how you take your medicine without asking %1$s, who prescribed it. Contact your clinic. If you feel very unwell, get care now.</string>
+    <string name="no_match">I couldn’t find this in the reviewed sources or your records, so I won’t guess. Please ask your clinician.</string>
+    <string name="answer_simulated">SIMULATED · not from the medical model</string>
+    <string name="answer_fallback">From your saved sources (the AI model is not running)</string>
+    <string name="answer_disclaimer">Information only, not a diagnosis.</string>
 </resources>

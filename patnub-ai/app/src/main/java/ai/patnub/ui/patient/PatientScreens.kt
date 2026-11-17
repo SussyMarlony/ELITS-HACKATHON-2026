@@ -1,29 +1,20 @@
 package ai.patnub.ui.patient
 
 import ai.patnub.R
+import ai.patnub.assistant.Assistant
+import ai.patnub.data.local.PatnubDatabase
+import ai.patnub.transfer.RecordImporter
 import ai.patnub.ui.components.PlaceholderPane
-import ai.patnub.ui.components.QrCode
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 
 /** The five Patient tabs from the build plan. */
 enum class PatientTab(
@@ -52,44 +43,23 @@ fun PatientNavigationBar(selected: PatientTab, onSelect: (PatientTab) -> Unit) {
     }
 }
 
-/** [checkInCode] is the phone owner's check-in code text, null until onboarding is done. */
-@Composable
-fun PatientScreen(tab: PatientTab, checkInCode: String?, modifier: Modifier = Modifier) {
-    // Each tab becomes its own screen composable as the phases land.
-    when {
-        tab == PatientTab.Scan && checkInCode != null -> CheckInPane(checkInCode, modifier)
-        else -> PlaceholderPane(title = tab.label, body = tab.description, modifier = modifier)
-    }
-}
+/** What the patient screens need once the phone has a profile. */
+class PatientServices(
+    val db: PatnubDatabase,
+    val importer: RecordImporter,
+    val assistant: Assistant,
+    val selfId: String,
+    val checkInCode: String,
+)
 
-/** Shown to the clinic so it can address records to this phone (spec v1.2 §4.6.1). */
 @Composable
-private fun CheckInPane(code: String, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Text(stringResource(R.string.checkin_title), style = MaterialTheme.typography.headlineSmall)
-        Text(
-            stringResource(R.string.checkin_body),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-        QrCode(
-            text = code,
-            contentDescription = stringResource(R.string.checkin_title),
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f),
-        )
-        Text(
-            stringResource(R.string.placeholder_scan),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
+fun PatientScreen(tab: PatientTab, services: PatientServices?, onTab: (PatientTab) -> Unit, modifier: Modifier = Modifier) {
+    when {
+        services == null -> PlaceholderPane(title = tab.label, body = tab.description, modifier = modifier)
+        tab == PatientTab.Assistant -> AssistantScreen(services.assistant, services.selfId, modifier)
+        tab == PatientTab.Records -> RecordsScreen(services.db, services.selfId, modifier)
+        tab == PatientTab.Scan -> ScanScreen(services.checkInCode, services.importer, onSaved = { onTab(PatientTab.Records) }, modifier = modifier)
+        // Medicines and Visits arrive in Phase 5.
+        else -> PlaceholderPane(title = tab.label, body = tab.description, modifier = modifier)
     }
 }

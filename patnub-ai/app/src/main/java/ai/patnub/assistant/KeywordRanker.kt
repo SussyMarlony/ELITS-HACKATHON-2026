@@ -23,6 +23,14 @@ object KeywordRanker {
             .map { it.take(4) }
             .toSet()
 
+    /** Share of the question's keywords found in [text], 0..1. */
+    fun score(question: String, text: String): Double {
+        val q = keys(question)
+        if (q.isEmpty()) return 0.0
+        val t = keys(text)
+        return q.count { it in t }.toDouble() / q.size
+    }
+
     /** Top [topK] chunks scoring at least [minScore], best first. Empty means "no close match". */
     fun rank(
         question: String,
@@ -30,10 +38,8 @@ object KeywordRanker {
         topK: Int = 2,
         minScore: Double = 0.25,
     ): List<ScoredChunk> {
-        val q = keys(question)
-        if (q.isEmpty()) return emptyList()
         return chunks
-            .map { c -> ScoredChunk(c, q.count { it in keys("${c.topic} ${c.contentText}") }.toDouble() / q.size) }
+            .map { c -> ScoredChunk(c, score(question, "${c.topic} ${c.contentText}")) }
             .filter { it.score >= minScore }
             .sortedByDescending { it.score }
             .take(topK)

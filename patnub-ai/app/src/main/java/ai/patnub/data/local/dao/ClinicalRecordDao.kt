@@ -5,12 +5,20 @@ import androidx.room3.Dao
 import androidx.room3.Insert
 import androidx.room3.OnConflictStrategy
 import androidx.room3.Query
+import androidx.room3.Upsert
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ClinicalRecordDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertOrIgnore(records: List<ClinicalRecordEntity>)
+
+    /** One row per record ID; a newer version replaces the older one in place (spec §4.6.1). */
+    @Upsert
+    suspend fun upsert(record: ClinicalRecordEntity)
+
+    @Query("SELECT * FROM clinical_records WHERE record_id = :recordId")
+    suspend fun getById(recordId: String): ClinicalRecordEntity?
 
     /**
      * Collection B for the Assistant (build plan Phase 2, step 2). Only issued records the

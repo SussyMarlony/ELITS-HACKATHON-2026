@@ -43,3 +43,50 @@ class ContractVectorsTest {
         assertEquals("""{"name":"Jose","age":67,"pub":"x"}""", Base45.decode(text.removePrefix(CheckIn.PREFIX)).decodeToString())
     }
 }
+
+class RecordCodecVectorsTest {
+    private val v = Json.parseToJsonElement(File("../../contract/vectors.json").readText()).jsonObject
+    private fun key(name: String, part: String) =
+        java.util.Base64.getUrlDecoder().decode(v.getValue(name).jsonObject.getValue(part).jsonPrimitive.content)
+    private val root = java.util.Base64.getUrlDecoder().decode(v.getValue("root_pub").jsonPrimitive.content)
+    private val qr = v.getValue("record_qr").jsonPrimitive.content
+    private val now = v.getValue("now").jsonPrimitive.content.toLong()
+
+    private fun open(text: String = qr, who: String = "patient", at: Long = now) =
+        RecordCodec.open(text, root, key(who, "priv"), key(who, "pub"), at)
+
+    private fun code(block: () -> Unit): OpenErrorCode =
+        (runCatching(block).exceptionOrNull() as OpenRecordException).code
+
+    @Test fun opensVectorRecord() {
+        val out = open()
+        val expected = v.getValue("expected_record").jsonObject
+        assertEquals(expected.getValue("rid").jsonPrimitive.content, out.record.rid)
+        assertEquals(expected.getValue("assessment").jsonPrimitive.content, out.record.assessment)
+        assertEquals("Amlodipine", out.record.meds.single().name)
+        assertEquals("once daily, in the morning", out.record.meds.single().frequency)
+        assertEquals(4, out.record.warnings.size)
+        assertEquals(v.getValue("expected_staff_name").jsonPrimitive.content, out.staff.name)
+        assertEquals(v.getValue("expected_clinic_name").jsonPrimitive.content, out.license.clinic_name)
+    }
+
+    @Test fun otherPhoneCannotOpen() = assertEquals(OpenErrorCode.NOT_FOR_THIS_PHONE, code { open(who = "other_patient") })
+
+    @Test fun expired() = assertEquals(OpenErrorCode.EXPIRED, code { open(at = now + 2 * 86_400) })
+
+    @Test fun wrongRoot() = assertEquals(
+        OpenErrorCode.SIGNATURE,
+        code { RecordCodec.open(qr, ByteArray(32) { 9 }, key("patient", "priv"), key("patient", "pub"), now) },
+    )
+
+    @Test fun tampered() {
+        val bytes = Base45.decode(qr.removePrefix(RecordCodec.PREFIX))
+        bytes[bytes.size - 80] = (bytes[bytes.size - 80].toInt() xor 1).toByte()
+        assertEquals(OpenErrorCode.SIGNATURE, code { open(RecordCodec.PREFIX + Base45.encode(bytes)) })
+    }
+
+    @Test fun junk() {
+        assertEquals(OpenErrorCode.FORMAT, code { open("hello") })
+        assertEquals(OpenErrorCode.FORMAT, code { open(RecordCodec.PREFIX + "abc") })
+    }
+}

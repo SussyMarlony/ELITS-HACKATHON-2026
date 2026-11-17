@@ -7,6 +7,8 @@ import ai.patnub.engine.EngineConfig
 import ai.patnub.engine.EngineException
 import ai.patnub.engine.FakeEngine
 import ai.patnub.identity.PatientIdentity
+import ai.patnub.assistant.Assistant
+import ai.patnub.transfer.RecordImporter
 import android.app.Application
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
@@ -23,6 +25,9 @@ class PatnubApplication : Application() {
 
     /** The patient who owns this phone. */
     val identity: PatientIdentity by lazy { PatientIdentity(this, database) }
+
+    val importer: RecordImporter by lazy { RecordImporter(database, identity) }
+    val assistant: Assistant by lazy { Assistant(database, engine) }
 
     /**
      * One engine per process, loaded once at startup so requests don't pay the load cost.

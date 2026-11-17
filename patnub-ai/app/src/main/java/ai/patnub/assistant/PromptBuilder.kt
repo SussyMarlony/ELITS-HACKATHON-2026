@@ -1,0 +1,30 @@
+package ai.patnub.assistant
+
+import ai.patnub.data.local.entity.ClinicalRecordEntity
+
+/**
+ * Builds the grounded prompt for MedGemma (build plan Phase 2 step 4). Kept short: about
+ * 300 tokens of context at the engine's measured 15 tok/s prompt speed is ~20 s on the phone.
+ */
+object PromptBuilder {
+    const val MAX_CONTEXT_CHARS = 1_200 // ~300 tokens
+
+    fun build(question: String, general: List<ScoredChunk>, records: List<ClinicalRecordEntity>): String = buildString {
+        appendLine("You are a health information assistant for patients in the Philippines.")
+        appendLine("Rules: use plain language. Use ONLY the context below. Do not diagnose. Never change, start or stop a medicine or dose.")
+        appendLine("Keep general information separate from the patient's own doctor record. If the context does not answer, say so and suggest seeing their clinician.")
+        val context = StringBuilder()
+        general.forEach { context.appendLine("[General · ${it.chunk.publisher}] ${it.chunk.contentText}") }
+        records.forEach { r ->
+            context.append("[Your doctor's record · ${r.encounterDate}] ")
+            r.assessment?.let { context.append("Assessment: $it. ") }
+            if (r.meds.isNotEmpty()) context.append("Medicines: ${r.meds.joinToString { "${it.name} ${it.dose} ${it.frequency}" }}. ")
+            if (r.instructions.isNotEmpty()) context.append("Instructions: ${r.instructions.joinToString("; ")}. ")
+            r.followUp?.let { context.append("Follow-up: $it.") }
+            context.appendLine()
+        }
+        appendLine("Context:")
+        appendLine(context.toString().take(MAX_CONTEXT_CHARS))
+        appendLine("Question: $question")
+    }
+}
