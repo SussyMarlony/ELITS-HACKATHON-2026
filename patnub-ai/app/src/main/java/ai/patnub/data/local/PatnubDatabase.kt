@@ -1,5 +1,8 @@
 package ai.patnub.data.local
 
+import ai.patnub.data.local.dao.ClinicalRecordDao
+import ai.patnub.data.local.dao.KnowledgeChunkDao
+import ai.patnub.data.local.dao.PatientConsentDao
 import ai.patnub.data.local.dao.UserDao
 import ai.patnub.data.local.entity.AuditEventEntity
 import ai.patnub.data.local.entity.ClinicalRecordEntity
@@ -38,6 +41,9 @@ import kotlinx.coroutines.Dispatchers
 @ColumnTypeConverters(Converters::class)
 abstract class PatnubDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
+    abstract fun knowledgeChunkDao(): KnowledgeChunkDao
+    abstract fun clinicalRecordDao(): ClinicalRecordDao
+    abstract fun patientConsentDao(): PatientConsentDao
 
     companion object {
         const val FILE_NAME = "patnub_local.db"
