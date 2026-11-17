@@ -6,13 +6,19 @@
 //  - RESIDENT: stock llama.cpp (mmap) plus mtmd for images. Used when the phone has the RAM.
 // The msr provider is a process-wide singleton (LIMITATION.md B3), so one model per process.
 #include <jni.h>
+#ifdef __ANDROID__
 #include <android/log.h>
+#else
+#include <cstdio>  // host test builds (scripts/test-native-host.sh)
+#endif
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstring>
 #include <mutex>
+#include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -22,7 +28,11 @@
 #include <msr/engine/engine.h>
 
 #define TAG "patnub_llm"
+#ifdef __ANDROID__
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#else
+#define LOGE(...) (std::fprintf(stderr, __VA_ARGS__), std::fputc('\n', stderr))
+#endif
 
 namespace {
 
@@ -99,6 +109,18 @@ std::string piece_of(const llama_vocab* vocab, llama_token t) {
     std::vector<char> big(static_cast<size_t>(-n));
     n = llama_token_to_piece(vocab, t, big.data(), static_cast<int32_t>(big.size()), 0, false);
     return n > 0 ? std::string(big.data(), static_cast<size_t>(n)) : std::string();
+}
+
+long long proc_status_kb(const char* key) {
+    FILE* fh = std::fopen("/proc/self/status", "r");
+    if (!fh) return -1;
+    char line[256];
+    long long v = -1;
+    while (std::fgets(line, sizeof(line), fh)) {
+        if (std::strncmp(line, key, std::strlen(key)) == 0) { v = std::atoll(line + std::strlen(key)); break; }
+    }
+    std::fclose(fh);
+    return v;
 }
 
 bool abort_cb(void* data) { return static_cast<Bridge*>(data)->cancel.load(); }
@@ -237,6 +259,9 @@ Java_ai_patnub_engine_NativeEngine_nativeLoad(JNIEnv* env, jclass, jstring jmode
     std::call_once(g_backend_once, [] { llama_backend_init(); });
     llama_model_params mp = llama_model_default_params();
     mp.n_gpu_layers = 0; // CPU only: consistent across phones
+    // No repacking: it copies the weights out of the mmap into a second buffer, close to doubling
+    // memory (msr_engine BENCHMARKS: 4,984 vs ~2,624 MiB). Phones need the memory more than the speed.
+    mp.use_extra_bufts = false;
     b->model = llama_model_load_from_file(model_path.c_str(), mp);
     if (!b->model) { delete b; throw_java(env, "Could not load the model file"); return 0; }
     b->vocab = llama_model_get_vocab(b->model);
@@ -323,7 +348,8 @@ Java_ai_patnub_engine_NativeEngine_nativeStats(JNIEnv* env, jclass, jlong handle
         std::memcpy(v, t, sizeof(v));
     } else if (b) {
         v[0] = (jlong) b->prompt_tokens; v[1] = (jlong) b->generated_tokens; v[2] = (jlong) b->ttft_ms;
-        v[3] = (jlong) b->prompt_ms; v[4] = (jlong) b->generate_ms; v[10] = -1; v[11] = -1; v[12] = -1;
+        v[3] = (jlong) b->prompt_ms; v[4] = (jlong) b->generate_ms;
+        v[10] = proc_status_kb("VmHWM:"); v[11] = proc_status_kb("VmRSS:"); v[12] = -1;
     }
     jlongArray out = env->NewLongArray(13);
     env->SetLongArrayRegion(out, 0, 13, v);

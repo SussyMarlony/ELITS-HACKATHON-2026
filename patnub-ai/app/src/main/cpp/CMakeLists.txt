@@ -15,6 +15,7 @@ endif()
 
 # Static llama.cpp so its weak msr hooks resolve to the provider linked into this library.
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(LLAMA_BUILD_COMMON OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -48,6 +49,15 @@ target_include_directories(patnub_llm PRIVATE
   "${LLAMA_DIR}/tools/mtmd"
 )
 target_compile_options(patnub_llm PRIVATE -O3 -fvisibility=hidden)
-target_link_libraries(patnub_llm PRIVATE mtmd llama ggml android log m)
-# 16 KB page sizes (Android 15+ devices).
-target_link_options(patnub_llm PRIVATE "-Wl,-z,max-page-size=16384")
+if(ANDROID)
+  target_link_libraries(patnub_llm PRIVATE mtmd llama ggml android log m)
+  # 16 KB page sizes (Android 15+ devices).
+  target_link_options(patnub_llm PRIVATE "-Wl,-z,max-page-size=16384")
+else()
+  # Host build for scripts/test-native-host.sh: same code, desktop JNI.
+  find_package(JNI REQUIRED COMPONENTS JVM) # headers only; headless JDKs have no AWT
+  target_include_directories(patnub_llm PRIVATE ${JNI_INCLUDE_DIRS})
+  set_target_properties(patnub_llm PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  target_link_libraries(patnub_llm PRIVATE mtmd llama ggml m)
+endif()

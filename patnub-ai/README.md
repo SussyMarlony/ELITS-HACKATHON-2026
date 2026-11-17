@@ -34,7 +34,8 @@ app/src/main/java/ai/patnub/
   MainActivity.kt              entry point, edge-to-edge, sets the Compose theme
   PatnubApplication.kt         owns the database and engine instances, seeds demo users, loads the engine
   engine/Engine.kt             Kotlin interface mirroring the libmsr_engine C API
-  engine/FakeEngine.kt         simulated engine for emulators and UI work without the model
+  engine/NativeEngine.kt       JNI-backed engine (app/src/main/cpp/patnub_llm.cpp)
+  models/                      model catalog by phone tier, download/import/verify (ModelStore)
   data/local/PatnubDatabase.kt Room database (patnub_local.db), 8 tables
   data/local/entity/           one entity per table, plus shared enums
   data/local/dao/              type-safe queries (DAOs)
@@ -69,20 +70,58 @@ Tables and columns match the build plan's Phase 1 schema, so its SQL examples wo
 - Schema changes need a version bump and a migration. Each build writes the schema JSON
   for the current version under `app/schemas/`.
 
-## Engine
+## AI models
 
-`Engine` mirrors the `libmsr_engine` C API
-(`../msr_engine/native/include/msr/engine/engine.h`): load, streamed generate, cancel,
-stats and close. Validation, error codes and stats semantics follow `engine.cpp`.
+One model per phone, picked from total RAM (`models/ModelCatalog.kt`):
 
-The app currently uses `FakeEngine`, because the JNI bridge to `libmsr_engine` isn't built
-yet. `FakeEngine` never reads a model file. It streams placeholder text at the measured
-3.00 tok/s and reports the measured 1 GiB numbers as stats. `Engine.isSimulated` is true for
-it, and the UI must say so wherever it shows engine output or stats. Keep it for emulators
-and for UI work on phones without the 2.3 GiB model.
+| Phone RAM | Model | How it runs | Photos |
+| --- | --- | --- | --- |
+| 8 GB and up | MedGemma 1.5 4B Q4_K_M + vision Q8_0 (3.1 GB) | in memory (mmap) | yes |
+| 6 GB | MedGemma 1.5 4B Q4_K_M (2.5 GB) | streamed by msr_engine, 1 GiB arena (~1.3 GB peak) | no |
+| 4 GB | Gemma 4 E2B Q4_0 + vision Q8_0 (3.4 GB) | in memory (mmap) | yes |
 
-To switch to the real engine, add a JNI-backed `Engine` implementation and change the one
-line in `PatnubApplication` that creates `FakeEngine`.
+The user can pick another package on the **AI model** screen (tap the status line in the top
+bar). Files come from Hugging Face through the system DownloadManager, or are imported from
+phone storage (USB copy, SD card). Every file is checked against its size and SHA-256 before use.
+MedGemma requires accepting Google's Health AI Developer Foundations terms in the app.
+
+Without a model, the Assistant still answers from the reviewed passages and the patient's
+records, labelled as such. There is no simulated engine.
+
+### Native build
+
+`app/src/main/cpp/patnub_llm.cpp` is the JNI bridge (`engine/NativeEngine.kt`). It links:
+llama.cpp at msr_engine's pinned commit with `msr_engine/patches/0001-msr-external-buffer-hook.patch`,
+mtmd (images), and msr_engine's runtime (streamed weights). Streamed mode is text-only; that is
+the configuration msr_engine has validated.
+
+```sh
+scripts/prepare-native.sh                         # llama.cpp into msr_engine/third_party/llama.cpp
+scripts/prepare-native.sh ~/somewhere/llama.cpp   # or elsewhere, then:
+./gradlew -PllamaDir=$HOME/somewhere/llama.cpp :app:assembleDebug
+```
+
+Needs NDK 30.0.16248370 and CMake 4.1.2 (SDK Manager). ABIs: arm64-v8a (armv8.2-a+dotprod,
+i.e. Cortex-A55/A76 and newer) and x86_64 (emulators).
+
+`scripts/test-native-host.sh` builds the same bridge for Linux and runs the real models from a
+small Java harness, so inference can be tested on a PC without a phone.
+
+Measured through this bridge on a PC (x86_64 CPU, 4 threads, `test-native-host.sh`), 18 Nov 2026.
+Phone speeds will be lower; msr_engine's phone measurement for the streamed row was 3.00 tok/s
+and 1,256 MiB on a Snapdragon 8s Gen 3.
+
+| Configuration | Result | Speed | Must stay in RAM | Mapped, reclaimable |
+| --- | --- | --- | ---: | ---: |
+| Gemma 4 E2B + vision, photo of a medicine pack | read "PARACETAMOL · 500 mg · Tablet" | 14–15 tok/s | 858 MiB | 2.7 GB |
+| MedGemma 1.5 4B + vision, same photo | read "PARACETAMOL · 500 mg · Tablet" (first token 29 s: image encoding) | 9.5 tok/s | 1,092 MiB | 2.4 GB |
+| MedGemma 1.5 4B streamed, text | grounded two-sentence answer | 3.1 tok/s | 1,320 MiB | 30 MB |
+
+Weight repacking is disabled (`use_extra_bufts = false`): it copies weights out of the mmap and
+nearly doubles memory. Gemma 4 E2B cannot be streamed (msr_engine supports the Gemma 3
+architecture only); the bridge reports that as a load error.
+
+Limits: one model per app process (msr_engine B3), so switching models restarts the app.
 
 ## Current state
 
@@ -95,8 +134,8 @@ Patient-only app (spec v1.2):
 - **Records** lists saved clinician-approved records.
 - **Assistant**: emergency red flags short-circuit before any model call; dose-change questions
   are referred to the prescriber; otherwise it retrieves reviewed passages and the patient's own
-  consented records and streams an answer (SIMULATED while `FakeEngine` is in use), or falls
-  back to the retrieved text when the model is not running.
+  consented records and streams an answer from the on-device model (photo questions where the
+  model reads photos), or answers from the retrieved text when no model is installed.
 - **Medicines**: search, or scan packaging (ML Kit text recognition, offline) followed by a
   mandatory name/strength/form confirmation; shows label info apart from the patient’s own
   prescription and flags strength conflicts without picking one. Seeded medicine data is a
@@ -109,7 +148,9 @@ Build note: `/mnt/DEV` was full during development, so builds were run with
 
 ## Privacy defaults
 
-- No `INTERNET` permission. The app is meant to run fully offline. The manifest strips
-  network permissions that libraries (ML Kit) would otherwise merge in. Only `CAMERA` is requested.
+- Runs offline. `INTERNET` is requested only for the optional one-time model download
+  (system DownloadManager); questions, scans, photos and records never leave the phone.
+  `CAMERA` is for scanning. Note: bundled ML Kit libraries may send anonymous usage logs when
+  the phone is online; review or replace them before a real deployment.
 - `allowBackup="false"` plus `data_extraction_rules.xml` keep app data out of cloud
   backups and device-to-device transfers, since the app will store patient records.
