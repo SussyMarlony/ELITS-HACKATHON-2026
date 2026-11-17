@@ -2,7 +2,8 @@
 
 Native Android app for the Alaga Health build plan
 ([`../ALAGA_HEALTH_ITERATIVE_BUILD_PHASES.md`](../ALAGA_HEALTH_ITERATIVE_BUILD_PHASES.md)).
-It is separate from the web mockup in `../alaga-health/` and from the engine work in `../ravin/`.
+It is separate from the web mockup in `../alaga-health/`. The on-device LLM runtime lives in
+the `../msr_engine/` submodule.
 
 ## Build
 
@@ -13,7 +14,7 @@ Open this folder (`patnub-ai/`) in Android Studio and let it sync, or from a ter
 ./gradlew :app:installDebug         # install on a connected phone
 ```
 
-Requires JDK 17+ (Android Studio's bundled JDK works) and Android SDK platform 36.
+Requires JDK 17+ (Android Studio's bundled JDK works) and Android SDK platform 37.
 
 | Component | Version |
 | --- | --- |
@@ -23,7 +24,7 @@ Requires JDK 17+ (Android Studio's bundled JDK works) and Android SDK platform 3
 | Compose BOM | 2026.09.00 |
 | Room (`androidx.room3`) / bundled SQLite | 3.0.3 / 2.7.1 |
 | KSP | 2.3.14 |
-| `minSdk` / `targetSdk` / `compileSdk` | 26 / 36 / 36 |
+| `minSdk` / `targetSdk` / `compileSdk` | 26 / 36 / 37 |
 | Package / application ID | `ai.patnub` |
 
 ## Layout
@@ -33,7 +34,7 @@ app/src/main/java/ai/patnub/
   MainActivity.kt              entry point, edge-to-edge, sets the Compose theme
   PatnubApplication.kt         owns the database and engine instances, seeds demo users, loads the engine
   engine/Engine.kt             Kotlin interface mirroring the libmsr_engine C API
-  engine/FakeEngine.kt         simulated engine used until the real library is available
+  engine/FakeEngine.kt         simulated engine for emulators and UI work without the model
   data/local/PatnubDatabase.kt Room database (patnub_local.db), 8 tables
   data/local/entity/           one entity per table, plus shared enums
   data/local/dao/              type-safe queries (DAOs)
@@ -63,12 +64,15 @@ Tables and columns match the build plan's Phase 1 schema, so its SQL examples wo
 
 ## Engine
 
-`Engine` mirrors the `libmsr_engine` C API (`../ravin/sdk/tools/msr_cli.cpp`): load,
-streamed generate, cancel, stats and close. The app currently uses `FakeEngine`, because
-the engine's source (`ravin/native/`, the llama.cpp submodule and its patch) is not in this
-repo yet. `FakeEngine` never reads a model file. It streams placeholder text at the measured
-3.00 tok/s and reports Ravin's measured 1 GiB numbers as stats. `Engine.isSimulated` is true
-for it, and the UI must say so wherever it shows engine output or stats.
+`Engine` mirrors the `libmsr_engine` C API
+(`../msr_engine/native/include/msr/engine/engine.h`): load, streamed generate, cancel,
+stats and close. Validation, error codes and stats semantics follow `engine.cpp`.
+
+The app currently uses `FakeEngine`, because the JNI bridge to `libmsr_engine` isn't built
+yet. `FakeEngine` never reads a model file. It streams placeholder text at the measured
+3.00 tok/s and reports the measured 1 GiB numbers as stats. `Engine.isSimulated` is true for
+it, and the UI must say so wherever it shows engine output or stats. Keep it for emulators
+and for UI work on phones without the 2.3 GiB model.
 
 To switch to the real engine, add a JNI-backed `Engine` implementation and change the one
 line in `PatnubApplication` that creates `FakeEngine`.
@@ -77,7 +81,6 @@ line in `PatnubApplication` that creates `FakeEngine`.
 
 Every screen is still a placeholder. The database exists and is seeded with the four
 demo accounts, and the simulated engine loads at startup, but no screen uses either yet.
-Next Phase 1 step: the telemetry pill in the top bar.
 
 ## Privacy defaults
 

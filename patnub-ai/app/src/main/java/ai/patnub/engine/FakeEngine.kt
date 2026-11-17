@@ -16,11 +16,11 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * Stand-in for `libmsr_engine` so the app can be built and demoed before the real library
- * is available. It never reads a model file. Replies come from [reply] and are streamed
- * one word at a time at the measured speed. Stats use Ravin's measured numbers for the
- * default 1 GiB configuration (`ravin/updates.md`, Phase 3 gate), so they are not
- * meaningful for other budgets.
+ * Simulated `libmsr_engine` for emulators and UI work on devices without the model file.
+ * It never reads a model. Replies come from [reply] and stream one word at a time at the
+ * measured speed. Validation and error codes follow the real `engine.cpp`. Stats use the
+ * measured numbers for the default 1 GiB configuration (`msr_engine/updates.md`, Phase 3
+ * gate), so they are not meaningful for other budgets.
  *
  * @param reply builds the full reply for a prompt. Override it to return, for example, the
  *   JSON a doctor-note extraction would produce.
@@ -48,15 +48,17 @@ class FakeEngine(
     private val thermal = FakeThermal()
 
     override suspend fun load(config: EngineConfig) {
-        if (config.modelPath.isBlank() || config.budgetBytes <= 0 || config.contextTokens <= 0 ||
-            config.threads <= 0 || config.readThreads <= 0
-        ) {
-            throw EngineException(EngineError.INVALID_ARGUMENT, "invalid engine config: $config")
+        if (config.modelPath.isBlank()) {
+            throw EngineException(EngineError.INVALID_ARGUMENT, "engine and model_path are required")
+        }
+        if (config.budgetBytes < 0 || config.contextTokens < 0 || config.threads < 0 || config.readThreads < 0) {
+            throw EngineException(EngineError.INVALID_ARGUMENT, "engine settings must not be negative: $config")
         }
         val current = _state.value
         val canLoad = current == EngineState.Unloaded || current is EngineState.Failed
         if (!canLoad || !_state.compareAndSet(current, EngineState.Loading)) {
-            throw EngineException(EngineError.ALREADY_LOADED)
+            // The real engine reports a second load as MODEL_ERROR, not ALREADY_LOADED.
+            throw EngineException(EngineError.MODEL_ERROR, "model already loaded")
         }
         try {
             delay(loadMs)
@@ -74,20 +76,19 @@ class FakeEngine(
         temperature: Float,
         seed: Int,
     ): Flow<String> = flow {
+        if (maxTokens < 1) {
+            throw EngineException(EngineError.INVALID_ARGUMENT, "engine, prompt and max_tokens are required")
+        }
         val cfg = config
         val current = _state.value
         if (cfg == null || (current != EngineState.Ready && current != EngineState.Generating)) {
-            throw EngineException(EngineError.NOT_LOADED)
-        }
-        if (prompt.isEmpty() || maxTokens <= 0 || temperature < 0f) {
-            throw EngineException(EngineError.INVALID_ARGUMENT, "empty prompt, maxTokens <= 0 or temperature < 0")
+            throw EngineException(EngineError.NOT_LOADED, "load a model before generating")
         }
         val promptTokens = estimateTokens(prompt)
-        if (promptTokens + maxTokens > cfg.contextTokens) {
-            throw EngineException(
-                EngineError.CONTEXT_ERROR,
-                "~$promptTokens prompt tokens + $maxTokens new tokens exceed ${cfg.contextTokens}",
-            )
+        val contextTokens = cfg.contextTokens.takeIf { it > 0 } ?: DEFAULT_CONTEXT_TOKENS
+        if (promptTokens + maxTokens > contextTokens) {
+            // The real engine reports this as INTERNAL_ERROR, not CONTEXT_ERROR.
+            throw EngineException(EngineError.INTERNAL_ERROR, "prompt + max_tokens exceeds context")
         }
         if (!generating.compareAndSet(false, true)) throw EngineException(EngineError.BUSY)
 
@@ -136,20 +137,21 @@ class FakeEngine(
             ttftMs = run.ttftMs,
             promptMs = run.promptMs,
             generateMs = run.generateMs,
-            budgetBytes = cfg.budgetBytes,
+            budgetBytes = cfg.budgetBytes.takeIf { it > 0 } ?: DEFAULT_BUDGET_BYTES,
             residentWeightBytes = RESIDENT_WEIGHT_BYTES,
             peakWeightBytes = PEAK_WEIGHT_BYTES,
+            readBytes = totalReadBytes.get(),
             streamedLayers = STREAMED_LAYERS,
             streamSlots = STREAM_SLOTS,
             prefetch = cfg.prefetch,
-            readThreads = cfg.readThreads,
-            readBytes = totalReadBytes.get(),
+            readThreads = cfg.readThreads.takeIf { it > 0 } ?: DEFAULT_READ_THREADS,
             peakVmHwmKb = PEAK_PROCESS_KB,
-            peakVmRssKb = PEAK_PROCESS_KB,
+            vmRssKb = PEAK_PROCESS_KB,
             thermalC = thermal.currentC(),
         )
     }
 
+    /** Nothing native to free, so there is nothing to wait for; the generation loop stops at its next pause. */
     override fun close() {
         cancel()
         config = null
@@ -196,15 +198,21 @@ class FakeEngine(
     private companion object {
         const val DEFAULT_REPLY =
             "[Simulated reply from FakeEngine, not MedGemma.] The on-device model is not " +
-                "connected yet. This text exists to test streaming, cancelling and layout."
+                "loaded. This text exists to test streaming, cancelling and layout."
 
-        // Measured on the Redmi Turbo 3, 1 GiB budget, 4 readers, prefetch on (ravin/updates.md).
+        // Engine defaults for 0-valued settings (engine.h).
+        const val DEFAULT_BUDGET_BYTES = 2048L shl 20
+        const val DEFAULT_CONTEXT_TOKENS = 2048
+        const val DEFAULT_READ_THREADS = 1
+
+        // Measured on the Redmi Turbo 3, 1 GiB budget, 4 readers, prefetch on
+        // (msr_engine/updates.md, Phase 3 gate).
         const val PEAK_WEIGHT_BYTES = 1_020_289_024L
         const val PEAK_PROCESS_KB = 1_285_939L // 1,255.8 MiB VmHWM
         const val STREAMED_LAYERS = 28
         const val STREAM_SLOTS = 2
 
-        // MedGemma Q4_K_M layers are 54.2 MiB each (ravin/README.md).
+        // MedGemma Q4_K_M layers are 54.2 MiB each (msr_engine/README.md).
         const val LAYER_BYTES = 56_832_819L
 
         // Approximation: peak weight bytes minus the two streaming slots.
@@ -214,11 +222,11 @@ class FakeEngine(
         const val STREAMED_BYTES_PER_PASS = STREAMED_LAYERS * LAYER_BYTES
 
         const val IDLE_C = 38.0
-        const val MAX_C = 74.0 // highest temperature Ravin observed during A/B runs
+        const val MAX_C = 74.0 // highest temperature observed during the A/B runs
         const val HEAT_PER_TOKEN_C = 0.4
         const val COOL_PER_SECOND_C = 0.1
 
-        /** About four characters per token for English text. */
+        /** About four characters per token for English text; at least 1, like a chat template would add. */
         fun estimateTokens(text: String): Int = max(1, (text.length + 3) / 4)
 
         /** Splits text into words, each keeping its trailing whitespace. */
