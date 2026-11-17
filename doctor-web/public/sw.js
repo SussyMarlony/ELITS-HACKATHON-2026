@@ -1,10 +1,10 @@
 // Offline support: the clinic may have no internet after the first visit (spec v1.2).
 // Pages: network first, cached copy when offline, so updates arrive when online.
 // Everything else (hashed build assets, icons): cache first.
-const CACHE = 'patnub-clinic-v1';
+const CACHE = 'patnub-clinic-v2';
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/', '/manifest.webmanifest', '/icon-192.png'])));
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/', '/manifest.webmanifest', '/logo-wide.png', '/logo-mark.png'])));
   self.skipWaiting();
 });
 

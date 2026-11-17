@@ -30,7 +30,8 @@ const st: {
   pendingCheckIn?: CheckInResult;
   error?: string;
   busy: boolean;
-} = { staff: [], patients: [], records: [], panel: 'patient', stage: 'history', note: '', encounterDate: today(), busy: false };
+  loaded: boolean;
+} = { staff: [], patients: [], records: [], panel: 'patient', stage: 'history', note: '', encounterDate: today(), busy: false, loaded: false };
 
 const app = document.querySelector<HTMLElement>('#app')!;
 
@@ -55,14 +56,14 @@ function qrSvg(text: string): string {
 function render() {
   const s = st;
   let body: string;
-  if (!s.license || (!s.staff.length && !s.pendingAdmin)) body = viewActivate();
+  if (!s.loaded) body = ''; // first paint: header only, until IndexedDB answers
+  else if (!s.license || (!s.staff.length && !s.pendingAdmin)) body = viewActivate();
   else if (!s.staff.length) body = viewFirstAdmin();
   else if (!s.session) body = viewSignIn();
   else body = viewHome();
   app.innerHTML = `
     <header class="top">
-      <img src="/icon-192.png" alt="" width="32" height="32" />
-      <h1>patnub.ai Clinic</h1>
+      <h1 class="brand"><img src="/logo-wide.png" alt="patnub.ai" width="132" height="44" /><span>Clinic</span></h1>
       <span class="pill ${navigator.onLine ? '' : 'pill-off'}">${navigator.onLine ? 'Online' : 'Offline'} · works without internet</span>
       ${s.license ? `<span class="pill ${licenseActive(s.license) ? '' : 'pill-bad'}">${esc(s.license.body.clinic_name)} · license ${licenseActive(s.license) ? 'until' : 'expired'} ${new Date(s.license.body.exp * 1000).toLocaleDateString()}</span>` : ''}
       ${s.session ? `<span class="grow"></span><span class="who">${esc(by(s.session.staff))}</span>
@@ -74,9 +75,11 @@ function render() {
     ${s.pendingCheckIn ? viewCheckInConfirm(s.pendingCheckIn) : ''}`;
 }
 
+const hero = '<img class="hero" src="/logo-mark.png" alt="" width="56" height="56" />';
+
 function viewActivate() {
   return `<section class="card narrow">
-    <h2>Activate this clinic</h2>
+    ${hero}<h2>Activate this clinic</h2>
     <p>Choose the license file patnub sent to your clinic. This only needs to be done once on this device.</p>
     <label class="btn btn-primary file">Choose license file<input type="file" accept=".json,application/json" data-change="license-file" hidden></label>
     <details><summary>Restore from a backup instead</summary>${backupImportForm()}</details>
@@ -98,7 +101,7 @@ function clinicianFields(prefix = '') {
 
 function viewFirstAdmin() {
   return `<form class="card narrow" data-form="first-admin">
-    <h2>Create the first clinician account</h2>
+    ${hero}<h2>Create the first clinician account</h2>
     <p>This account is also the clinic admin. It can add other clinicians and make backups.</p>
     ${clinicianFields()}
     <button class="btn btn-primary" ${st.busy ? 'disabled' : ''}>Create account</button>
@@ -108,7 +111,7 @@ function viewFirstAdmin() {
 function viewSignIn() {
   const active = st.staff.filter((x) => !x.disabled);
   return `<form class="card narrow" data-form="sign-in">
-    <h2>Sign in</h2>
+    ${hero}<h2>Sign in</h2><p class="muted">${esc(st.license?.body.clinic_name ?? '')}</p>
     <label>Clinician<select name="staff_id">${active.map((x) => `<option value="${esc(x.staff_id)}">${esc(by(x))}</option>`).join('')}</select></label>
     <label>Passcode<input name="passcode" type="password" required autocomplete="current-password" autofocus></label>
     <button class="btn btn-primary" ${st.busy ? 'disabled' : ''}>${st.busy ? 'Checking…' : 'Sign in'}</button>
@@ -253,6 +256,7 @@ async function refresh() {
   st.license = await getLicense();
   st.staff = await listStaff();
   st.patients = await listPatients();
+  st.loaded = true;
   if (st.selected) {
     st.selected = st.patients.find((p) => p.id === st.selected!.id);
     st.records = st.selected ? await recordsFor(st.selected.id) : [];
@@ -464,6 +468,7 @@ async function startScan() {
 
 window.addEventListener('online', render);
 window.addEventListener('offline', render);
+render();
 void refresh();
 
 // Dev server skips the service worker so edits are never served from a stale cache.

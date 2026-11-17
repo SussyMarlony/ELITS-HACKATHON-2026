@@ -8,16 +8,21 @@ import ai.patnub.identity.SelfProfile
 import ai.patnub.transfer.CheckIn
 import ai.patnub.ui.onboarding.OnboardingScreen
 import ai.patnub.ui.components.EngineStatusPill
+import ai.patnub.ui.components.LogoMark
 import ai.patnub.ui.patient.PatientNavigationBar
 import ai.patnub.ui.patient.PatientScreen
 import ai.patnub.ui.patient.PatientServices
 import ai.patnub.ui.patient.PatientTab
 import ai.patnub.ui.theme.PatnubTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -29,7 +34,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
@@ -88,10 +95,14 @@ fun PatnubApp(engine: Engine, identity: PatientIdentity?, makeServices: ((selfId
 @Composable
 private fun PatnubTopBar(engine: Engine, onDebugReset: (() -> Unit)?) {
     TopAppBar(
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
         title = {
-            Column {
-                Text(stringResource(R.string.app_name))
-                EngineStatusPill(engine)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                LogoMark(30.dp)
+                Column {
+                    Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+                    EngineStatusPill(engine)
+                }
             }
         },
         actions = {

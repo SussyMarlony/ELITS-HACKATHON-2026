@@ -2,6 +2,7 @@ package ai.patnub.ui.onboarding
 
 import ai.patnub.R
 import ai.patnub.identity.validateProfile
+import ai.patnub.ui.components.LogoMark
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -44,7 +45,8 @@ fun OnboardingScreen(
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(stringResource(R.string.onboarding_title), style = MaterialTheme.typography.headlineSmall)
+        LogoMark(88.dp, Modifier.padding(top = 16.dp))
+        Text(stringResource(R.string.onboarding_title), style = MaterialTheme.typography.headlineMedium)
         Text(stringResource(R.string.onboarding_body), color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedTextField(
             value = name, onValueChange = { name = it }, singleLine = true,
