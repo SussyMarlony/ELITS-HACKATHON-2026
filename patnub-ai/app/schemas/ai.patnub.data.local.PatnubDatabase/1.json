@@ -1,0 +1,750 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "042287e8703ad0a33b94aa38d76d46b5",
+    "entities": [
+      {
+        "tableName": "users",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`user_id` TEXT NOT NULL, `role` TEXT NOT NULL, `display_name` TEXT NOT NULL, `age` INTEGER, `barangay` TEXT, `specialty` TEXT, `facility` TEXT, `prc_license_no` TEXT, PRIMARY KEY(`user_id`))",
+        "fields": [
+          {
+            "fieldPath": "userId",
+            "columnName": "user_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "role",
+            "columnName": "role",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "display_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "age",
+            "columnName": "age",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "barangay",
+            "columnName": "barangay",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "specialty",
+            "columnName": "specialty",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "facility",
+            "columnName": "facility",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "prcLicenseNo",
+            "columnName": "prc_license_no",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "user_id"
+          ]
+        }
+      },
+      {
+        "tableName": "general_knowledge_chunks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`chunk_id` TEXT NOT NULL, `source_id` TEXT NOT NULL, `source_title` TEXT NOT NULL, `publisher` TEXT NOT NULL, `version` TEXT NOT NULL, `review_date` TEXT NOT NULL, `status` TEXT NOT NULL, `topic` TEXT NOT NULL, `content_text` TEXT NOT NULL, `embedding_blob` BLOB, PRIMARY KEY(`chunk_id`))",
+        "fields": [
+          {
+            "fieldPath": "chunkId",
+            "columnName": "chunk_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceId",
+            "columnName": "source_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceTitle",
+            "columnName": "source_title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "publisher",
+            "columnName": "publisher",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "version",
+            "columnName": "version",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reviewDate",
+            "columnName": "review_date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "topic",
+            "columnName": "topic",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contentText",
+            "columnName": "content_text",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "embeddingBlob",
+            "columnName": "embedding_blob",
+            "affinity": "BLOB"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "chunk_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_general_knowledge_chunks_status_topic",
+            "unique": false,
+            "columnNames": [
+              "status",
+              "topic"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_general_knowledge_chunks_status_topic` ON `${TABLE_NAME}` (`status`, `topic`)"
+          },
+          {
+            "name": "index_general_knowledge_chunks_source_id",
+            "unique": false,
+            "columnNames": [
+              "source_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_general_knowledge_chunks_source_id` ON `${TABLE_NAME}` (`source_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "clinical_records",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`record_id` TEXT NOT NULL, `patient_id` TEXT NOT NULL, `clinician_id` TEXT NOT NULL, `encounter_date` TEXT NOT NULL, `raw_doctor_note` TEXT NOT NULL, `assessment` TEXT, `meds_json` TEXT NOT NULL, `instructions_json` TEXT NOT NULL, `warnings_json` TEXT NOT NULL, `follow_up` TEXT, `approval_status` TEXT NOT NULL, `version` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, PRIMARY KEY(`record_id`), FOREIGN KEY(`patient_id`) REFERENCES `users`(`user_id`) ON UPDATE NO ACTION ON DELETE NO ACTION , FOREIGN KEY(`clinician_id`) REFERENCES `users`(`user_id`) ON UPDATE NO ACTION ON DELETE NO ACTION )",
+        "fields": [
+          {
+            "fieldPath": "recordId",
+            "columnName": "record_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "patientId",
+            "columnName": "patient_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "clinicianId",
+            "columnName": "clinician_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "encounterDate",
+            "columnName": "encounter_date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rawDoctorNote",
+            "columnName": "raw_doctor_note",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assessment",
+            "columnName": "assessment",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "meds",
+            "columnName": "meds_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "instructions",
+            "columnName": "instructions_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "warnings",
+            "columnName": "warnings_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "followUp",
+            "columnName": "follow_up",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "approvalStatus",
+            "columnName": "approval_status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "version",
+            "columnName": "version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "record_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_clinical_records_patient_id_approval_status",
+            "unique": false,
+            "columnNames": [
+              "patient_id",
+              "approval_status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_clinical_records_patient_id_approval_status` ON `${TABLE_NAME}` (`patient_id`, `approval_status`)"
+          },
+          {
+            "name": "index_clinical_records_clinician_id",
+            "unique": false,
+            "columnNames": [
+              "clinician_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_clinical_records_clinician_id` ON `${TABLE_NAME}` (`clinician_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "users",
+            "onDelete": "NO ACTION",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "patient_id"
+            ],
+            "referencedColumns": [
+              "user_id"
+            ]
+          },
+          {
+            "table": "users",
+            "onDelete": "NO ACTION",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "clinician_id"
+            ],
+            "referencedColumns": [
+              "user_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "qr_grants",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`grant_id` TEXT NOT NULL, `record_id` TEXT NOT NULL, `intended_patient_id` TEXT NOT NULL, `token_hash` TEXT NOT NULL, `signature` TEXT NOT NULL, `expires_at` INTEGER NOT NULL, `status` TEXT NOT NULL, `redeemed_at` INTEGER, PRIMARY KEY(`grant_id`), FOREIGN KEY(`record_id`) REFERENCES `clinical_records`(`record_id`) ON UPDATE NO ACTION ON DELETE NO ACTION , FOREIGN KEY(`intended_patient_id`) REFERENCES `users`(`user_id`) ON UPDATE NO ACTION ON DELETE NO ACTION )",
+        "fields": [
+          {
+            "fieldPath": "grantId",
+            "columnName": "grant_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recordId",
+            "columnName": "record_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "intendedPatientId",
+            "columnName": "intended_patient_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tokenHash",
+            "columnName": "token_hash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "signature",
+            "columnName": "signature",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expiresAt",
+            "columnName": "expires_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "redeemedAt",
+            "columnName": "redeemed_at",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "grant_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_qr_grants_record_id",
+            "unique": false,
+            "columnNames": [
+              "record_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_qr_grants_record_id` ON `${TABLE_NAME}` (`record_id`)"
+          },
+          {
+            "name": "index_qr_grants_intended_patient_id",
+            "unique": false,
+            "columnNames": [
+              "intended_patient_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_qr_grants_intended_patient_id` ON `${TABLE_NAME}` (`intended_patient_id`)"
+          },
+          {
+            "name": "index_qr_grants_token_hash",
+            "unique": true,
+            "columnNames": [
+              "token_hash"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_qr_grants_token_hash` ON `${TABLE_NAME}` (`token_hash`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "clinical_records",
+            "onDelete": "NO ACTION",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "record_id"
+            ],
+            "referencedColumns": [
+              "record_id"
+            ]
+          },
+          {
+            "table": "users",
+            "onDelete": "NO ACTION",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "intended_patient_id"
+            ],
+            "referencedColumns": [
+              "user_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "patient_consents",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`consent_id` TEXT NOT NULL, `patient_id` TEXT NOT NULL, `record_id` TEXT NOT NULL, `scope` TEXT NOT NULL, `status` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, PRIMARY KEY(`consent_id`), FOREIGN KEY(`patient_id`) REFERENCES `users`(`user_id`) ON UPDATE NO ACTION ON DELETE NO ACTION , FOREIGN KEY(`record_id`) REFERENCES `clinical_records`(`record_id`) ON UPDATE NO ACTION ON DELETE NO ACTION )",
+        "fields": [
+          {
+            "fieldPath": "consentId",
+            "columnName": "consent_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "patientId",
+            "columnName": "patient_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recordId",
+            "columnName": "record_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scope",
+            "columnName": "scope",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "consent_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_patient_consents_patient_id_record_id",
+            "unique": false,
+            "columnNames": [
+              "patient_id",
+              "record_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_patient_consents_patient_id_record_id` ON `${TABLE_NAME}` (`patient_id`, `record_id`)"
+          },
+          {
+            "name": "index_patient_consents_record_id",
+            "unique": false,
+            "columnNames": [
+              "record_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_patient_consents_record_id` ON `${TABLE_NAME}` (`record_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "users",
+            "onDelete": "NO ACTION",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "patient_id"
+            ],
+            "referencedColumns": [
+              "user_id"
+            ]
+          },
+          {
+            "table": "clinical_records",
+            "onDelete": "NO ACTION",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "record_id"
+            ],
+            "referencedColumns": [
+              "record_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "medication_references",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`med_id` TEXT NOT NULL, `name` TEXT NOT NULL, `alias` TEXT, `drug_class` TEXT NOT NULL, `strengths_json` TEXT NOT NULL, `forms_json` TEXT NOT NULL, `uses_json` TEXT NOT NULL, `side_effects_json` TEXT NOT NULL, `warnings_json` TEXT NOT NULL, `storage_text` TEXT NOT NULL, `label_instructions` TEXT NOT NULL, `source_citation` TEXT NOT NULL, PRIMARY KEY(`med_id`))",
+        "fields": [
+          {
+            "fieldPath": "medId",
+            "columnName": "med_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "alias",
+            "columnName": "alias",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "drugClass",
+            "columnName": "drug_class",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "strengths",
+            "columnName": "strengths_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "forms",
+            "columnName": "forms_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uses",
+            "columnName": "uses_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sideEffects",
+            "columnName": "side_effects_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "warnings",
+            "columnName": "warnings_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "storageText",
+            "columnName": "storage_text",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "labelInstructions",
+            "columnName": "label_instructions",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceCitation",
+            "columnName": "source_citation",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "med_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_medication_references_name",
+            "unique": false,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_medication_references_name` ON `${TABLE_NAME}` (`name`)"
+          }
+        ]
+      },
+      {
+        "tableName": "visit_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`item_id` TEXT NOT NULL, `patient_id` TEXT NOT NULL, `item_type` TEXT NOT NULL, `origin` TEXT NOT NULL, `raw_input` TEXT NOT NULL, `structured_json` TEXT, `has_conflict` INTEGER NOT NULL, `conflict_note` TEXT, `created_at` INTEGER NOT NULL, PRIMARY KEY(`item_id`), FOREIGN KEY(`patient_id`) REFERENCES `users`(`user_id`) ON UPDATE NO ACTION ON DELETE NO ACTION )",
+        "fields": [
+          {
+            "fieldPath": "itemId",
+            "columnName": "item_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "patientId",
+            "columnName": "patient_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itemType",
+            "columnName": "item_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "origin",
+            "columnName": "origin",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rawInput",
+            "columnName": "raw_input",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "structuredJson",
+            "columnName": "structured_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "hasConflict",
+            "columnName": "has_conflict",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "conflictNote",
+            "columnName": "conflict_note",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "item_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_visit_items_patient_id_item_type",
+            "unique": false,
+            "columnNames": [
+              "patient_id",
+              "item_type"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_visit_items_patient_id_item_type` ON `${TABLE_NAME}` (`patient_id`, `item_type`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "users",
+            "onDelete": "NO ACTION",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "patient_id"
+            ],
+            "referencedColumns": [
+              "user_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "audit_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`event_id` TEXT NOT NULL, `actor_id` TEXT NOT NULL, `actor_role` TEXT NOT NULL, `action` TEXT NOT NULL, `resource_id` TEXT, `result` TEXT NOT NULL, `details_json` TEXT, `created_at` INTEGER NOT NULL, PRIMARY KEY(`event_id`))",
+        "fields": [
+          {
+            "fieldPath": "eventId",
+            "columnName": "event_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actorId",
+            "columnName": "actor_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actorRole",
+            "columnName": "actor_role",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "action",
+            "columnName": "action",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "resourceId",
+            "columnName": "resource_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "result",
+            "columnName": "result",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "detailsJson",
+            "columnName": "details_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "event_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_audit_events_created_at",
+            "unique": false,
+            "columnNames": [
+              "created_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_audit_events_created_at` ON `${TABLE_NAME}` (`created_at`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '042287e8703ad0a33b94aa38d76d46b5')"
+    ]
+  }
+}

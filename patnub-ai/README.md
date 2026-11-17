@@ -40,9 +40,8 @@ app/src/main/java/ai/patnub/
   data/local/dao/              type-safe queries (DAOs)
   data/local/Converters.kt     Instant, LocalDate and JSON list column conversions
   data/local/SeedData.kt       demo accounts p1, p2, p3 (patients) and d1 (clinician)
-  ui/PatnubApp.kt              root Scaffold: top bar with Patient/Doctor switch, bottom tabs
+  ui/PatnubApp.kt              root Scaffold: top bar with engine status pill, bottom tabs (patient-only app; clinicians use ../doctor-web/)
   ui/patient/PatientScreens.kt the 5 Patient tabs (Assistant, Records, Scan, Medicines, Visits)
-  ui/doctor/DoctorScreens.kt   the 3 Doctor steps (Write note, Review AI draft, Issue QR)
   ui/components/               shared composables
   ui/theme/                    colors and Material 3 theme
 app/src/main/res/              strings, vector icons, adaptive launcher icon, backup rules
