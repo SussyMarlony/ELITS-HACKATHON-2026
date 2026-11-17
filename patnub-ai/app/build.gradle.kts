@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "ai.patnub"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "ai.patnub"
