@@ -20,14 +20,18 @@
     <string name="tab_records">Records</string>
     <string name="tab_scan">Scan</string>
     <string name="tab_medicines">Medicines</string>
-    <string name="tab_visits">Visits</string>
+    <string name="tab_profiles">Profiles</string>
 
     <string name="placeholder_assistant">Ask health questions. Answers will come from reviewed DOH/PNF sources and your doctor\'s approved records.</string>
     <string name="placeholder_records">When your clinic gives you a QR code after a visit, scan it and the record is saved here, on this phone.</string>
     <string name="records_empty_title">No records yet</string>
     <string name="placeholder_scan">Scanning a record QR from your clinic is coming next.</string>
     <string name="placeholder_medicines">Look up a medicine or scan its packaging.</string>
-    <string name="placeholder_visits">Prepare questions before a visit, or write a recap after one.</string>
+    <string name="placeholder_profiles">Your details, as your clinic sees them.</string>
+
+    <string name="profile_edit">Edit</string>
+    <string name="profile_save">Save</string>
+    <string name="profile_body">These are the details your clinic sees in your check-in code. Keep them up to date.</string>
 
     <string name="coming_soon">Not built yet</string>
 

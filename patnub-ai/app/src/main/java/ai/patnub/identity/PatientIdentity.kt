@@ -67,6 +67,17 @@ class PatientIdentity(private val context: Context, private val db: PatnubDataba
         _profile.value = SelfProfile.Ready(user)
     }
 
+    /** Update the profile fields the clinic sees in the check-in code. */
+    suspend fun update(name: String, age: Int, barangay: String) {
+        val user = db.userDao().getById(selfUserId())?.copy(
+            displayName = name.trim(),
+            age = age,
+            barangay = barangay.trim().ifEmpty { null },
+        ) ?: return
+        db.userDao().upsert(user)
+        _profile.value = SelfProfile.Ready(user)
+    }
+
     /** The phone owner's `users.user_id`. Throws before onboarding. */
     fun selfUserId(): String = checkNotNull(prefs.getString(KEY_USER_ID, null)) { "no profile" }
 

@@ -113,7 +113,9 @@ fun PatnubApp(
                 tab = patientTab, services = services, chat = chat,
                 modelReady = engineState == EngineState.Ready || engineState == EngineState.Generating,
                 onManageModel = { showModels = true },
-                onTab = { patientTab = it }, modifier = modifier,
+                onTab = { patientTab = it },
+                onUpdateProfile = { n, a, b -> identity.update(n, a, b) },
+                modifier = modifier,
             )
         }
     }
