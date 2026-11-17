@@ -10,5 +10,8 @@ if (existsSync(path) && !process.argv.includes('--force')) {
   console.error('demo/root.json exists. Pass --force to replace it (breaks all existing licenses).');
   process.exit(1);
 }
-writeFileSync(path, JSON.stringify({ warning: 'DEMO ONLY - never use for real patients', ...keyToJson(await generateSigningKey()) }, null, 2) + '\n');
-console.log('wrote', path.pathname);
+const key = keyToJson(await generateSigningKey());
+writeFileSync(path, JSON.stringify({ warning: 'DEMO ONLY - never use for real patients', ...key }, null, 2) + '\n');
+// Public half only: the apps bundle this file, never root.json.
+writeFileSync(new URL('../demo/root_pub.txt', import.meta.url), key.pub + '\n');
+console.log('wrote', path.pathname, 'and root_pub.txt');
