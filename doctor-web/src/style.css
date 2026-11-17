@@ -192,7 +192,10 @@ summary { cursor: pointer; color: var(--brand-text); font-weight: 550; font-size
 .steps li.done { border-color: var(--brand); color: var(--text); }
 .steps li.cur { border-color: var(--brand); color: var(--brand-text); font-weight: 650; }
 
-.med { display: grid; grid-template-columns: 1.2fr .8fr 1.4fr auto; gap: 8px; margin-bottom: 8px; align-items: center; }
+/* Name, dose and remove on one row; how-often gets the full width below, so it never truncates. */
+.med { display: grid; grid-template-columns: 1.3fr .7fr auto; gap: 8px; margin-bottom: 12px; align-items: center; }
+.med input:nth-of-type(3) { grid-column: 1 / 3; grid-row: 2; }
+.med button { grid-column: 3; grid-row: 1; }
 
 .qr-wrap { display: grid; grid-template-columns: minmax(240px, 380px) 1fr; gap: 28px; align-items: start; }
 .qr-wrap h3 { margin-top: 0; font-size: 1.25rem; letter-spacing: -0.01em; }
@@ -219,7 +222,6 @@ summary { cursor: pointer; color: var(--brand-text); font-weight: 550; font-size
 @media (max-width: 800px) {
   .layout, .qr-wrap, .grid2 { grid-template-columns: 1fr; }
   .side { position: static; }
-  .med { grid-template-columns: 1fr 1fr; }
   .card { padding: 18px; }
   .top .who { display: none; }
 }
@@ -234,4 +236,83 @@ summary { cursor: pointer; color: var(--brand-text); font-weight: 550; font-size
 @media (prefers-contrast: more) {
   :root { --line: var(--line-strong); }
   .card, input, select, textarea { border-color: var(--line-strong); }
+}
+
+/* ---------- UX pass ---------- */
+.note { background: var(--warn-soft); color: var(--warn-text); padding: 10px 14px; border-radius: 12px; font-size: .9375rem; }
+.search { margin-bottom: 8px; padding: 9px 12px; font-size: .9375rem; }
+.empty { text-align: center; padding: 48px 24px; }
+.empty img { margin-bottom: 12px; }
+.empty p { max-width: 380px; margin: 0 auto; }
+.rec-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.tag { font-size: .75rem; font-weight: 600; color: var(--text-2); background: var(--surface-2); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+.facts { padding-left: 18px; margin: 0 0 8px; color: var(--text-2); }
+.facts li + li { margin-top: 4px; }
+.facts b { color: var(--text); font-variant-numeric: tabular-nums; }
+.actions.start { justify-content: flex-start; }
+
+/* Review: the clinician's note stays visible beside the fields it produced. */
+.review { display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; gap: 20px; align-items: start; }
+.review .source {
+  position: sticky; top: 84px; background: var(--surface-2); border-radius: 14px; padding: 14px 16px;
+  max-height: calc(100vh - 120px); overflow: auto;
+}
+.review .source h3 { margin: 0 0 6px; font-size: .8125rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
+.review .source p { white-space: pre-wrap; font-size: .9375rem; line-height: 1.55; }
+.review .banner { margin-top: 0; }
+.approve-bar {
+  grid-column: 1 / -1; position: sticky; bottom: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  margin: 8px -24px -24px; padding: 14px 24px; border-top: 1px solid var(--line);
+  background: var(--glass); backdrop-filter: saturate(180%) blur(16px); -webkit-backdrop-filter: saturate(180%) blur(16px);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+.approve-bar .check { margin: 0; }
+
+/* Scanner viewfinder */
+.viewfinder { position: relative; border-radius: 14px; overflow: hidden; margin: 8px 0; background: #000; }
+.viewfinder video { margin: 0; border-radius: 0; }
+.viewfinder span {
+  position: absolute; inset: 14% 22%; border: 3px solid rgba(255, 255, 255, .9); border-radius: 18px;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .25);
+}
+
+/* Full-screen QR: white for the best scan, nothing else competing. */
+.present {
+  position: fixed; inset: 0; z-index: 20; background: #fff; color: #111a19;
+  display: grid; place-content: center; justify-items: center; gap: 12px; padding: 24px; cursor: zoom-out;
+  transition: opacity 180ms var(--ease-out);
+  @starting-style { opacity: 0; }
+}
+.present .qr { border: 0; padding: 0; width: min(88vh, 88vw, 720px); }
+.present p { margin: 0; color: #111a19; }
+.present .muted { color: #5b6b69; }
+.present:focus { outline: none; }
+
+/* Toasts: bottom centre, enter by transition (interruptible), exit faster than enter. */
+/* Top, under the header: never covers the sticky approve bar or form actions. Not clickable. */
+.toasts { position: fixed; right: 16px; top: 72px; z-index: 30; display: grid; gap: 8px; width: min(360px, calc(100vw - 32px)); pointer-events: none; }
+.toast {
+  pointer-events: none; padding: 12px 16px; border-radius: 14px; font-weight: 550; font-size: .9375rem;
+  background: var(--text); color: var(--bg); box-shadow: var(--shadow-lg);
+  transition: transform 220ms var(--ease-out), opacity 220ms var(--ease-out);
+  @starting-style { transform: translateY(-10px); opacity: 0; }
+}
+.toast.error { background: var(--danger); color: #fff; }
+.toast.leaving { transform: translateY(-6px); opacity: 0; transition-duration: 150ms; }
+
+@media (max-width: 800px) {
+  .review { grid-template-columns: 1fr; }
+  .review .source { position: static; max-height: 180px; }
+  .approve-bar { margin: 8px -18px -18px; padding: 12px 18px; }
+  .side .list { max-height: 220px; overflow: auto; }
+}
+@media (max-width: 600px) {
+  .top { gap: 6px 8px; }
+  .top .pill { font-size: .75rem; }
+  .top .pill:first-of-type { display: none; } /* online state matters less than the clinic and license */
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast, .present { transition: opacity 120ms ease; @starting-style { transform: none; } }
+  .toast.leaving { transform: none; }
 }

@@ -19,6 +19,11 @@ none (spec v1.2, build plan §0). Data lives in the browser (IndexedDB). No back
 
 When the license expires, issuing stops and records stay readable.
 
+Shared-device details: clinicians are signed out after 10 minutes without activity (their
+unfinished consultation is kept for them only); leaving an unfinished note asks first; the QR
+screen has a full-screen mode for the patient's camera and a live validity countdown. Add
+`?debug` to the URL to show a "paste check-in code" box for testing without a camera.
+
 | File | Role |
 | --- | --- |
 | `src/main.ts` | UI (no framework) |
