@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.google.android.gms.tasks.Task
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -31,12 +32,30 @@ import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * Camera preview that reports the first QR code it reads, once. Asks for camera permission
- * itself. ML Kit's bundled model runs on the phone, so this works offline.
- */
+/** Reports the first QR code it reads, once. ML Kit's bundled model runs offline. */
 @Composable
 fun QrScanner(onResult: (String) -> Unit, deniedText: String, modifier: Modifier = Modifier) {
+    val scanner = remember {
+        BarcodeScanning.getClient(BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build())
+    }
+    DisposableEffect(Unit) { onDispose { scanner.close() } }
+    CameraScanner(
+        detect = { image -> scanner.process(image).continueWith { t -> if (t.isSuccessful) t.result.firstNotNullOfOrNull { it.rawValue } else null } },
+        onResult = onResult, deniedText = deniedText, modifier = modifier,
+    )
+}
+
+/**
+ * Camera preview that runs [detect] on frames and reports the first non-null result, once.
+ * Asks for camera permission itself.
+ */
+@Composable
+fun CameraScanner(
+    detect: (InputImage) -> Task<String?>,
+    onResult: (String) -> Unit,
+    deniedText: String,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     var granted by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
@@ -54,15 +73,7 @@ fun QrScanner(onResult: (String) -> Unit, deniedText: String, modifier: Modifier
     val latest by rememberUpdatedState(onResult)
     val done = remember { AtomicBoolean(false) }
     val executor = remember { Executors.newSingleThreadExecutor() }
-    val scanner = remember {
-        BarcodeScanning.getClient(BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build())
-    }
-    DisposableEffect(Unit) {
-        onDispose {
-            scanner.close()
-            executor.shutdown()
-        }
-    }
+    DisposableEffect(Unit) { onDispose { executor.shutdown() } }
 
     AndroidView(
         modifier = modifier,
@@ -81,9 +92,8 @@ fun QrScanner(onResult: (String) -> Unit, deniedText: String, modifier: Modifier
                         proxy.close()
                         return@setAnalyzer
                     }
-                    scanner.process(InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees))
-                        .addOnSuccessListener { codes ->
-                            val text = codes.firstNotNullOfOrNull { it.rawValue }
+                    detect(InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees))
+                        .addOnSuccessListener { text ->
                             if (text != null && done.compareAndSet(false, true)) {
                                 ContextCompat.getMainExecutor(ctx).execute { latest(text) }
                             }

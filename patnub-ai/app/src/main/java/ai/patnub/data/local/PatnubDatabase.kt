@@ -3,8 +3,10 @@ package ai.patnub.data.local
 import ai.patnub.data.local.dao.AuditEventDao
 import ai.patnub.data.local.dao.ClinicalRecordDao
 import ai.patnub.data.local.dao.KnowledgeChunkDao
+import ai.patnub.data.local.dao.MedicationReferenceDao
 import ai.patnub.data.local.dao.PatientConsentDao
 import ai.patnub.data.local.dao.UserDao
+import ai.patnub.data.local.dao.VisitItemDao
 import ai.patnub.data.local.entity.AuditEventEntity
 import ai.patnub.data.local.entity.ClinicalRecordEntity
 import ai.patnub.data.local.entity.KnowledgeChunkEntity
@@ -46,6 +48,8 @@ abstract class PatnubDatabase : RoomDatabase() {
     abstract fun clinicalRecordDao(): ClinicalRecordDao
     abstract fun patientConsentDao(): PatientConsentDao
     abstract fun auditEventDao(): AuditEventDao
+    abstract fun medicationReferenceDao(): MedicationReferenceDao
+    abstract fun visitItemDao(): VisitItemDao
 
     companion object {
         const val FILE_NAME = "patnub_local.db"

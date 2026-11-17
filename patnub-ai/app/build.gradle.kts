@@ -57,6 +57,7 @@ dependencies {
     implementation(libs.androidx.camera.view)
     // Bundled model: works offline, no Google Play services needed.
     implementation(libs.mlkit.barcode.scanning)
+    implementation(libs.mlkit.text.recognition)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

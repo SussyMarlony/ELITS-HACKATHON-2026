@@ -97,7 +97,12 @@ Patient-only app (spec v1.2):
   are referred to the prescriber; otherwise it retrieves reviewed passages and the patient's own
   consented records and streams an answer (SIMULATED while `FakeEngine` is in use), or falls
   back to the retrieved text when the model is not running.
-- Medicines and Visits are still placeholders (Phase 5).
+- **Medicines**: search, or scan packaging (ML Kit text recognition, offline) followed by a
+  mandatory name/strength/form confirmation; shows label info apart from the patient’s own
+  prescription and flags strength conflicts without picking one. Seeded medicine data is a
+  placeholder from the prototype, not reviewed PNF content.
+- **Visits**: question suggestions before a visit (editable, saved) and patient-reported recaps
+  after one, with dose conflicts against clinician records shown side by side.
 
 Build note: `/mnt/DEV` was full during development, so builds were run with
 `./gradlew -I ~/.cache/patnub-build/tmpbuild.gradle ...` to put outputs under `~/.cache`.
