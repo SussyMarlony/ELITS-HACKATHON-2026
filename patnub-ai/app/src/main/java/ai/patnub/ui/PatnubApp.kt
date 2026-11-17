@@ -5,6 +5,7 @@ import ai.patnub.engine.Engine
 import ai.patnub.engine.FakeEngine
 import ai.patnub.identity.PatientIdentity
 import ai.patnub.identity.SelfProfile
+import ai.patnub.transfer.CheckIn
 import ai.patnub.ui.onboarding.OnboardingScreen
 import ai.patnub.ui.components.EngineStatusPill
 import ai.patnub.ui.patient.PatientNavigationBar
@@ -22,6 +23,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -43,6 +45,11 @@ fun PatnubApp(engine: Engine, identity: PatientIdentity?) {
     // Preview has no identity; treat it as an onboarded phone.
     val profile = identity?.profile?.collectAsState()?.value ?: SelfProfile.Loading
     val scope = rememberCoroutineScope()
+    val checkInCode = remember(profile) {
+        val user = (profile as? SelfProfile.Ready)?.user
+        val pub = identity?.publicKey()
+        if (user != null && pub != null) CheckIn.of(user.displayName, user.age ?: 0, user.barangay, pub).encode() else null
+    }
     val debuggable = LocalContext.current.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
     Scaffold(
@@ -67,7 +74,7 @@ fun PatnubApp(engine: Engine, identity: PatientIdentity?) {
             .padding(innerPadding)
         when (profile) {
             SelfProfile.Missing -> OnboardingScreen(onCreate = { n, a, b -> identity!!.create(n, a, b) }, modifier = modifier)
-            else -> PatientScreen(tab = patientTab, modifier = modifier)
+            else -> PatientScreen(tab = patientTab, checkInCode = checkInCode, modifier = modifier)
         }
     }
 }

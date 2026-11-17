@@ -42,6 +42,8 @@ app/src/main/java/ai/patnub/
   data/local/SeedData.kt       demo knowledge passages (placeholders, not real DOH/WHO/PNF text)
   identity/PatientIdentity.kt  the phone owner's profile and X25519 key pair (private key wrapped by Android Keystore)
   ui/onboarding/               first-launch profile form
+  transfer/                    Base45 and check-in code (../contract/ format, checked against contract/vectors.json)
+  ui/components/QrCode.kt      QR rendering (ZXing core)
   ui/PatnubApp.kt              root Scaffold: top bar with engine status pill, bottom tabs (patient-only app; clinicians use ../doctor-web/)
   ui/patient/PatientScreens.kt the 5 Patient tabs (Assistant, Records, Scan, Medicines, Visits)
   ui/components/               shared composables
@@ -83,7 +85,7 @@ line in `PatnubApplication` that creates `FakeEngine`.
 Patient-only app (spec v1.2). First launch asks for name, age and barangay, then creates the
 phone's key pair. Debug builds show a "Reset (debug)" button in the top bar that wipes the
 profile, keys and local data for demos. The top bar shows a live engine status pill
-(SIMULATED while `FakeEngine` is in use). Tabs are still placeholders.
+(SIMULATED while `FakeEngine` is in use). The Scan tab shows the phone's check-in code. Other tabs are still placeholders.
 
 ## Privacy defaults
 

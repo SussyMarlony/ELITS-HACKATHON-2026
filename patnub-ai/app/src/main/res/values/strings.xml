@@ -16,7 +16,7 @@
 
     <string name="placeholder_assistant">Ask health questions. Answers will come from reviewed DOH/PNF sources and your doctor\'s approved records.</string>
     <string name="placeholder_records">Your doctor-approved visit records will appear here.</string>
-    <string name="placeholder_scan">Scan a QR code from your doctor to save a visit record.</string>
+    <string name="placeholder_scan">Scanning a record QR from your clinic is coming next.</string>
     <string name="placeholder_medicines">Look up a medicine or scan its packaging.</string>
     <string name="placeholder_visits">Prepare questions before a visit, or write a recap after one.</string>
 
@@ -29,4 +29,6 @@
     <string name="onboarding_barangay">Barangay (optional)</string>
     <string name="onboarding_continue">Continue</string>
     <string name="debug_reset">Reset (debug)</string>
+    <string name="checkin_title">Your check-in code</string>
+    <string name="checkin_body">Show this to the clinic at your visit. It lets them send your records to this phone only.</string>
 </resources>
