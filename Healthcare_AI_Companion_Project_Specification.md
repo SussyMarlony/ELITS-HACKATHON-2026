@@ -97,7 +97,8 @@ Access must be enforced by the backend, not merely hidden in the user interface.
 
 - Native Android application (`patnub-ai/`). It is **patient-only**: no clinician screens or role switch.
 - One patient profile per phone, created at onboarding (name, age, barangay) together with a key pair kept on the phone. Shows a **check-in code** (QR) with that profile and the public key.
-- Runs fully on the phone (local model, local database) and has no `INTERNET` permission. It needs `CAMERA` for scanning.
+- Runs fully on the phone (local model, local database). `INTERNET` is used only for the optional one-time AI model download; models can also be imported from storage. It needs `CAMERA` for scanning.
+- On-device models by phone RAM: MedGemma 1.5 4B in memory with photo understanding (8 GB+), MedGemma 1.5 4B streamed through msr_engine (6 GB), Gemma 4 E2B with photos (4 GB).
 - A simple home screen with prominent access to the AI assistant and common tasks.
 - Large, readable controls and plain-language labels.
 - Support text input first; voice input can be added with speech-to-text support.

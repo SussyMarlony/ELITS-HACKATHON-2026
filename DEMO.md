@@ -11,7 +11,8 @@ the patient.
    the Cloudflare Pages URL. Load it once so it works offline. Activate with `license.json` and
    create the first clinician (e.g. Dr. Ana Reyes, MD, PRC 0123456).
 3. **Patient app:** install the debug APK on the phone (`cd patnub-ai && ./gradlew :app:installDebug`).
-   Complete onboarding (e.g. Maria Dela Cruz, 54, Brgy. Malinis).
+   Complete onboarding (e.g. Maria Dela Cruz, 54, Brgy. Malinis), then install the AI model the
+   app recommends for that phone (2.5–3.4 GB).
 4. Turn on Airplane Mode on both devices.
 
 ## The loop (about 90 s)
@@ -38,6 +39,6 @@ Demo note:
 
 ## Honest labels on stage
 
-- The Assistant shows **SIMULATED** until the real MedGemma engine (JNI bridge) is wired in.
-  Without the model it answers from the retrieved passages and says so.
+- Install the AI model before the demo (top bar › Manage AI model): download on Wi-Fi or import
+  the files by USB. Without a model the Assistant answers from saved sources and says so.
 - Medical content in the demo is placeholder text, not clinically reviewed.

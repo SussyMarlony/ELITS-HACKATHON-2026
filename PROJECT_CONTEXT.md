@@ -71,7 +71,7 @@ cd patnub-ai
 | `res/` | strings, vector tab icons, adaptive launcher icon, `data_extraction_rules.xml` |
 
 ### 3.2 Privacy defaults already in place
-- **No `INTERNET` permission.** The app is meant to run fully offline.
+- **Offline.** `INTERNET` only for the optional one-time model download; nothing the patient enters leaves the phone.
 - `allowBackup="false"` plus `data_extraction_rules.xml`: patient data stays out of cloud backup and device transfer.
 
 ### 3.3 Next steps (Phase 1 remainder)
@@ -134,7 +134,7 @@ Fallback rule: if the model is unavailable or slow, the UI falls back to determi
 | 5 | Medicines lookup/scan, Visits prep/recap | Spec §4.8–4.10 satisfied |
 | 6 | Runtime tuning, QA suite, demo polish | 10/10 spec §12 tests pass; peak VmRSS ≤ 1,310 MiB; full doctor→patient→RAG loop offline in < 90 s |
 
-**Current position (v1.2 phases, build plan §0):** Phase 1 in progress (Android shell, Room DB, `Engine`/`FakeEngine`, status pill done; Doctor view removal, onboarding, JNI bridge, `doctor-web/` scaffold pending). Phase 2 logic (red-flag gate, keyword retrieval) done and unit-tested; UI pending.
+**Current position (v1.2 phases, build plan §0):** Phase 1 in progress (Android shell, Room DB, `Engine`/`NativeEngine`, status pill done; Doctor view removal, onboarding, JNI bridge, `doctor-web/` scaffold pending). Phase 2 logic (red-flag gate, keyword retrieval) done and unit-tested; UI pending.
 
 ## 7. ravin (on-device inference engine)
 
@@ -174,7 +174,7 @@ Use it for screen flow, copy and visual design when building the Compose screens
 ## 9. Working notes for contributors / agents
 
 - Work in `patnub-ai/`. Treat other folders as read-only references unless the task says otherwise.
-- Keep the app offline: do not add `INTERNET` permission or any network SDK.
+- Keep the app offline: network use is limited to the optional model download; add no network SDKs.
 - No plaintext PHI in QR codes, logs or backups.
 - AI output that becomes a clinical record needs explicit human approval.
 - Keep a deterministic fallback for every AI-powered feature.
