@@ -2,10 +2,12 @@
 
 **Working title:** Kalusugan+ (provisional; name and branding are not yet approved)  
 **Document status:** Product specification draft  
-**Version:** 1.0  
-**Date:** 17 November 2026  
+**Version:** 1.1  
+**Date:** 18 November 2026  
 **Product type:** Patient-facing healthcare companion with a clinician portal  
 **Primary audience:** Patients in rural and underserved communities, and the healthcare professionals who care for them
+
+> **v1.1 changes (18 Nov 2026):** the patient app is a native Android app and the clinician portal is a separate web app, delivered from three repositories (§7.5). Record transfer is a fully offline, signed and encrypted QR with no server round trip (§4.6.1). This resolves open decisions 3 and 11 and adds decisions 16–19 (§14). Where §4.6 and §7.3 describe an opaque token redeemed against a backend, §4.6.1 and §7.5 now take precedence.
 
 > This document consolidates the product direction discussed so far. Product goals and features that were explicitly discussed are treated as product requirements. Technical choices and rollout priorities that were not finalized are identified as recommendations or open decisions rather than settled facts.
 
@@ -93,7 +95,8 @@ Access must be enforced by the backend, not merely hidden in the user interface.
 
 ### 3.1 Patient application
 
-- Mobile-first application.
+- Native Android application (repository `patnub-ai`). It is **patient-only**: there is no clinician role, doctor screen or role switch in the app.
+- Runs fully on the phone (local model, local database) and has no `INTERNET` permission. It needs the `CAMERA` permission for QR scanning.
 - A simple home screen with prominent access to the AI assistant and common tasks.
 - Large, readable controls and plain-language labels.
 - Support text input first; voice input can be added with speech-to-text support.
@@ -101,7 +104,7 @@ Access must be enforced by the backend, not merely hidden in the user interface.
 
 ### 3.2 Doctor portal
 
-- Responsive web dashboard for clinicians.
+- Responsive web dashboard for clinicians (repository `patnub-doctor-web`), backed by the API (repository `patnub-api`).
 - Patient and consultation context should be visible only to authenticated, authorized users.
 - A focused consultation-summary composer with review, approval, QR generation, and record-status actions.
 
@@ -299,6 +302,28 @@ The QR code is a secure transfer mechanism for a doctor-approved record. It shou
 - Log generation, access, redemption, revocation, and relevant failures.
 - Provide a way to revoke an unredeemed code and correct or supersede an issued record.
 - Do not treat possession of a QR image alone as sufficient proof that a person is authorized to view or import the record.
+
+### 4.6.1 Offline QR transfer (v1.1 decision)
+
+The QR carries the record itself, so the phone never contacts a server to import it. Because it contains health information, the payload is **encrypted to the intended patient's phone** and **signed by the clinician**. The "no raw PHI in the visible payload" rule above is met by encryption, not by omission.
+
+**Pairing (once per visit).** The patient app shows a *check-in code*: a QR holding the patient's reference and the public half of a key pair generated and kept on the phone (X25519). The clinician portal scans or enters it when the patient is selected. This replaces the "identity matching" guess with a cryptographic one: only the intended phone can decrypt the record, so a wrong-patient scan fails by construction.
+
+**Issuing.** On approval the API builds the *patient copy* of the record (structured, clinician-approved fields only), compresses it, signs it with the clinician's key, encrypts it to the patient's public key, and returns it as one QR, or as a numbered sequence of QR frames when it does not fit in one.
+
+**Payload (version 1)**, in order: format version, issue and expiry time, record ID and record version, clinician certificate, ephemeral public key + nonce, ciphertext (compressed record) + authentication tag, Ed25519 signature over everything before it.
+
+**Clinician trust.** The app bundles a root public key. Each clinician holds a short-lived certificate (ID, name, PRC number, facility, public key, validity) signed by that root and included in the QR, so the app can verify a clinician it has never seen, offline.
+
+**Patient app on scan.** Check the signature and certificate chain, check expiry against the phone clock, check the record ID and version have not been imported already, decrypt, show the preview, require explicit consent, then store the record with its clinician source and approval metadata.
+
+**Size.** A QR holds at most about 2.9 KB (binary, lowest error correction) and about 2.3 KB at medium error correction. Fixed overhead is roughly 350 bytes (certificate, signature, key, nonce, tag). That leaves roughly 2 KB of compressed record, which is a short consultation summary. Longer records use animated multi-frame QR. These are estimates to confirm against real records and real phone cameras.
+
+**What this model cannot do.** State the limits in the UI and in clinician training:
+- **No remote revocation of an issued QR.** A scan works offline, so it cannot be recalled. The defence is a short expiry plus a *superseding record version*: a higher version of the same record ID replaces the earlier one on the patient's phone when imported.
+- **No server-enforced single use.** The app instead refuses to import the same record ID and version twice. Another phone cannot use the code because it cannot decrypt it.
+- **Possession of a photo of the QR is not enough** to read it, but a photo plus the patient's unlocked phone is. Protect the app with the phone's screen lock or app lock.
+- The patient never receives the clinician's raw note. It stays on the clinician side (§4.5 preservation rule). The patient copy contains only the approved structured fields.
 
 #### Memory terminology and design
 
@@ -591,6 +616,22 @@ Import record into patient account
 Patient-scoped RAG context
 ```
 
+### 7.3.1 Doctor QR flow, offline (v1.1)
+
+```text
+Patient phone                          Clinician portal (web)  ->  API
+  show check-in code (public key) ---> scan code, select patient
+                                       write note -> AI structuring -> clinician approves
+                                       API: build patient copy, compress,
+                                            sign (clinician key), encrypt (patient key)
+  scan QR  <---------------------------- display QR (or numbered frames)
+  verify signature + cert + expiry
+  decrypt -> preview -> patient consent
+  save to local DB -> available as Collection B for RAG
+```
+
+No network call is made by the phone at any step.
+
 ### 7.4 Design constraints
 
 - Enforce patient-level isolation in every patient-record query.
@@ -600,6 +641,20 @@ Patient-scoped RAG context
 - Use managed secrets and token hashing; do not store reusable QR secrets in plaintext.
 - Version prompts, models, sources, safety rules, and evaluation sets so behavior can be audited.
 - Preserve provenance for every doctor-issued record and every cited knowledge source.
+
+### 7.5 Repositories and responsibilities (v1.1)
+
+| Repo (proposed name) | Owns | Does not own |
+|---|---|---|
+| `patnub-ai` | Android patient app: Assistant, Records, Scan, Medicines, Visits; on-device model (`msr_engine`); local database; QR verify, decrypt and import; check-in code | Clinician features, signing keys, anything that needs a network |
+| `patnub-doctor-web` | Clinician UI: sign-in, patient selection (scan check-in code), note composer, AI-draft review, approval, QR display, record history and supersede | Business rules and keys. It calls the API |
+| `patnub-api` | Clinician authentication and verification, clinician certificates and the root key, patient-copy building, signing, encryption, the clinician-side record store and revisions, audit events, and the **contract** | The patient's on-phone data |
+
+**Contract.** The QR payload format, the patient-copy JSON schema, the check-in code format and the API's OpenAPI description are defined in `patnub-api/contract/`, with **test vectors** (a known key pair, record and resulting QR bytes). The Android app and the web app copy that folder, and both must pass the vectors. This replaces a fourth repo. Version the contract and bump the payload format version on any breaking change.
+
+**Data placement.** The raw clinician note, drafts, revisions and audit trail live on the clinician side (API database). The patient's phone holds only issued patient copies, chat history, visit notes and the knowledge base. Nothing patient-side is uploaded.
+
+**Impact on the build plan.** Phase 3 (clinician AI structuring and approval) and the doctor half of Phase 4 move to `patnub-doctor-web` and `patnub-api`; the Android Phase 4 work becomes the offline QR verify and import described in §4.6.1. The current doctor screens and role switch in the app are to be removed.
 
 ---
 
@@ -808,7 +863,7 @@ The following decisions still need to be made before implementation is fully spe
 
 1. **Product name and brand:** Is “Kalusugan+” the chosen name or only a visual placeholder?
 2. **Initial deployment location:** Which country, region, and rural communities will be served first?
-3. **Target devices:** Native Android, iOS, cross-platform mobile, or mobile-first web? The visual concept currently uses iPhone-style screens, but this does not settle the platform.
+3. ~~**Target devices.**~~ **Resolved in v1.1:** native Android patient app; clinicians use a web app. iOS is not planned.
 4. **Doctor onboarding:** Who verifies clinicians, credentials, and facility affiliations?
 5. **Patient identity matching:** What process links a doctor's encounter to the correct patient account?
 6. **Medical content sources:** Which organizations and reference databases will be approved, and who reviews updates?
@@ -816,11 +871,15 @@ The following decisions still need to be made before implementation is fully spe
 8. **QR policy:** Should a code be single-use, time-limited, reusable by the same patient, or governed by different policies for different record types?
 9. **Consent and retention:** What are the retention, correction, deletion, and revocation rules for patient records and chat history?
 10. **Language priorities:** Which local languages should be supported first, and who will clinically review translations?
-11. **Connectivity assumptions:** What functionality must work fully offline, and which functions may require a connection?
+11. ~~**Connectivity assumptions.**~~ **Resolved in v1.1:** the patient app is fully offline, including record import (§4.6.1). The clinician portal and API require a connection.
 12. **Integration needs:** Will the first release connect to clinic systems, pharmacies, national health systems, or external medical records, or remain standalone?
 13. **Deployment and compliance:** What hosting region, legal basis, privacy controls, and regulatory pathway apply to the selected market?
 14. **AI and infrastructure stack:** Which LLM, embedding model, vector database, application framework, and hosting provider will be used?
 15. **Business and operating model:** Who funds the service, maintains medical content, supports patients, and handles clinical escalations?
+16. **Clinician AI structuring (new in v1.1):** Notes now go to the API. Which model structures them: one hosted by the project, a self-hosted model, or a third-party service? Raw notes are health information, so a third-party service needs a privacy review and patient or facility consent.
+17. **Offline QR details:** Confirm the payload size limits with real records. How is the patient's check-in code delivered to the clinician's computer (webcam scan, typed short code, or both)? Do multi-frame QR codes need to be supported in the first release?
+18. **Key and certificate management:** Who holds the root key, how long do clinician certificates last, and how is a lost or revoked clinician removed given that phones are offline (short certificate life, app updates)?
+19. **Patient copy scope:** Which fields appear in the patient copy, and is the raw clinician note ever shared with the patient?
 
 ---
 
