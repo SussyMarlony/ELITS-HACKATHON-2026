@@ -107,6 +107,15 @@ i.e. Cortex-A55/A76 and newer) and x86_64 (emulators).
 `scripts/test-native-host.sh` builds the same bridge for Linux and runs the real models from a
 small Java harness, so inference can be tested on a PC without a phone.
 
+`scripts/check-16kb.py` checks that the built APK runs on 16 KB page-size devices (Android 15+;
+Play requires it for updates from 1 Feb 2027). It needs only Python 3, no NDK, and checks the
+64-bit libraries' ELF LOAD alignment, GNU_RELRO page sharing, and 16 KB zip alignment:
+
+```sh
+./gradlew :app:assembleDebug && scripts/check-16kb.py   # every APK under app/build/outputs/apk/
+scripts/check-16kb.py path/to/app-release.apk           # or a specific APK or .so file
+```
+
 Measured through this bridge on a PC (x86_64 CPU, 4 threads, `test-native-host.sh`), 18 Nov 2026.
 Phone speeds will be lower; msr_engine's phone measurement for the streamed row was 3.00 tok/s
 and 1,256 MiB on a Snapdragon 8s Gen 3.

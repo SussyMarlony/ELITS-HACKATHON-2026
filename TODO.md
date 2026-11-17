@@ -97,7 +97,9 @@ Biggest wins first:
       phones and older big cores (A57/A72/A73), e.g. Helio P70 (OPPO CPH1969). Since the CPU check
       in `NativeEngine.load` they get a clear "can't run the model" message instead of a SIGILL crash.
       To run models there: a second `armv8-a` build of `libpatnub_llm.so` chosen at runtime.
-- [ ] Verify 16 KB page-size compatibility on an Android 15+ device.
+- [ ] Verify 16 KB page-size compatibility: run `patnub-ai/scripts/check-16kb.py` on a built APK
+      (static ELF + zip alignment check), then smoke-test on a 16 KB emulator image or an Android 15+
+      device with "Boot with 16KB page size" (`adb shell getconf PAGE_SIZE` → 16384).
 
 ## 7. Release
 
