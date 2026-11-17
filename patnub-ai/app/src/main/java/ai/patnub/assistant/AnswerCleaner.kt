@@ -13,9 +13,24 @@ object AnswerCleaner {
     private val speaker = Regex("""^\s*\**\s*patnub\s*\**\s*:\s*\**\s*""", RegexOption.IGNORE_CASE)
     private val thoughtBlock = Regex("""^\s*thought\b[\s\S]*?(\n\s*\n)(?=\S)""")
 
+    /** Reasoning blocks by marker (MedGemma 1.5, Gemma 4). The native bridge passes the markers through. */
+    private val reasoning = listOf("<unused94>" to "<unused95>", "<|channel>" to "<channel|>")
+    private val specialTokens =
+        Regex("""<unused\d+>|<\|?(turn|channel|tool_call|tool_response|tool)\|?>|<(start|end)_of_turn>|<eos>|<bos>""")
+
     /** Cleaned reply text and whether the model started writing another turn (generation can stop). */
     fun clean(raw: String): Pair<String, Boolean> {
         var t = raw
+        for ((open, close) in reasoning) {
+            while (true) {
+                val i = t.indexOf(open)
+                if (i < 0) break
+                val j = t.indexOf(close, i + open.length)
+                // Still reasoning: show what came before it, nothing after, until the block closes.
+                t = if (j < 0) t.substring(0, i) else t.removeRange(i, j + close.length)
+            }
+        }
+        t = t.replace(specialTokens, "")
         if (t.trimStart().startsWith("thought", ignoreCase = true)) {
             // Reasoning leaked: show nothing until it ends with a blank line, then drop it.
             t = thoughtBlock.find(t)?.let { t.substring(it.range.last + 1) } ?: return "" to false

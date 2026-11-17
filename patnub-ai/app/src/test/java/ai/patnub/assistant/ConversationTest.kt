@@ -100,6 +100,12 @@ class AnswerCleanerTest {
         assertEquals("Your finger may be sprained.", AnswerCleaner.clean("thought\nplan the reply\n\nYour finger may be sprained.").first)
     }
 
+    @Test fun hidesReasoningBetweenMarkersEvenWhileStreaming() {
+        assertEquals("", AnswerCleaner.clean("<unused94>thought\nThe user wants").first)
+        assertEquals("Rest the finger.", AnswerCleaner.clean("<unused94>thought\nplan<unused95>Rest the finger.").first)
+        assertEquals("Hi there.", AnswerCleaner.clean("<|channel>thought\nx<channel|>Hi there.<turn|>").first)
+    }
+
     @Test fun leavesNormalAnswersAlone() {
         val (t, stop) = AnswerCleaner.clean("Possible causes:\n* strain\n* arthritis")
         assertEquals("Possible causes:\n* strain\n* arthritis", t)

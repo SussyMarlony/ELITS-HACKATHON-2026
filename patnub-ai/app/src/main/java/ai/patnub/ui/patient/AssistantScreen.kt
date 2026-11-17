@@ -12,12 +12,14 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -27,6 +29,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AssistChip
@@ -35,10 +38,10 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SuggestionChip
-import androidx.compose.material3.OutlinedButton
 import ai.patnub.assistant.Turn
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -60,7 +63,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -110,7 +116,12 @@ class ChatState(private val scope: CoroutineScope) {
         scope.launch {
             val index = items.size
             try {
-                val reply = assistant.ask(q, selfId, earlier, imagePath)
+                val reply = try {
+                    assistant.ask(q, selfId, earlier, imagePath)
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    Reply.Failed(e.message)
+                }
                 items += ChatItem.Answer(reply)
                 if (reply is Reply.Answer) {
                     try {
@@ -120,7 +131,7 @@ class ChatState(private val scope: CoroutineScope) {
                         }
                     } catch (e: Exception) {
                         if (e is kotlinx.coroutines.CancellationException) throw e
-                        items[index] = ChatItem.Answer(Reply.NoMatch)
+                        items[index] = ChatItem.Answer(Reply.Failed(e.message))
                     }
                 }
             } finally {
@@ -218,29 +229,100 @@ fun AssistantScreen(
                 modifier = Modifier.padding(start = 12.dp),
             )
         }
-        Row(
-            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        // iMessage-style composer: + photo button, borderless field, circular send/stop.
+        Surface(
+            shape = RoundedCornerShape(26.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
-            if (assistant.supportsImages) {
-                TextButton(onClick = { pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
-                    Text(stringResource(R.string.assistant_photo))
+            Row(
+                Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (assistant.supportsImages) {
+                    Box(
+                        Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .clickable {
+                                pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.ic_add),
+                            contentDescription = stringResource(R.string.assistant_photo),
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                }
+                Box(Modifier.weight(1f)) {
+                    if (input.isEmpty()) {
+                        Text(
+                            stringResource(R.string.assistant_hint),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 12.dp),
+                        )
+                    }
+                    BasicTextField(
+                        value = input,
+                        onValueChange = { input = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 10.dp),
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(onSend = { send(input) }),
+                        maxLines = 4,
+                    )
+                }
+                if (chat.busy) {
+                    CircleAction(
+                        icon = R.drawable.ic_stop,
+                        description = stringResource(R.string.assistant_stop),
+                        background = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        onClick = { chat.stop() },
+                    )
+                } else {
+                    val canSend = input.isNotBlank() || photo != null
+                    CircleAction(
+                        icon = R.drawable.ic_send_arrow,
+                        description = stringResource(R.string.assistant_send),
+                        background = if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+                        tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        enabled = canSend,
+                        onClick = { send(input) },
+                    )
                 }
             }
-            OutlinedTextField(
-                value = input, onValueChange = { input = it },
-                placeholder = { Text(stringResource(R.string.assistant_hint)) },
-                modifier = Modifier.weight(1f), maxLines = 4,
-                shape = RoundedCornerShape(24.dp),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { send(input) }),
-            )
-            if (chat.busy) {
-                OutlinedButton(onClick = { chat.stop() }) { Text(stringResource(R.string.assistant_stop)) }
-            } else {
-                Button(onClick = { send(input) }, enabled = input.isNotBlank() || photo != null) { Text(stringResource(R.string.assistant_send)) }
-            }
+        }
+    }
+}
+
+@Composable
+private fun CircleAction(
+    @androidx.annotation.DrawableRes icon: Int,
+    description: String,
+    background: androidx.compose.ui.graphics.Color,
+    tint: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+) {
+    Surface(
+        shape = CircleShape,
+        color = background,
+        modifier = Modifier
+            .size(36.dp)
+            .clickable(enabled = enabled, onClick = onClick),
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+            Icon(painterResource(icon), contentDescription = description, tint = tint, modifier = Modifier.size(20.dp))
         }
     }
 }
@@ -270,10 +352,16 @@ private fun AnswerBubble(item: ChatItem.Answer) {
         Reply.NoMatch -> Card(bubble) { Text(stringResource(R.string.no_match), Modifier.padding(16.dp)) }
         Reply.NeedsModel -> Card(bubble) { Text(stringResource(R.string.assistant_needs_model), Modifier.padding(16.dp)) }
         Reply.OffTopic -> Card(bubble) { Text(stringResource(R.string.assistant_off_topic), Modifier.padding(16.dp)) }
+        is Reply.Failed -> Card(bubble) { Text(stringResource(R.string.assistant_failed), Modifier.padding(16.dp)) }
         is Reply.Answer -> Card(bubble, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (r.fallback) Label(stringResource(R.string.answer_fallback))
-                if (item.text.isEmpty() && !item.done) TypingDots() else Text(lightMarkdown(item.text.trim()))
+                when {
+                    item.text.isBlank() && !item.done -> TypingDots()
+                    // The model stopped without a visible reply (e.g. ran out of length while reasoning).
+                    item.text.isBlank() -> Text(stringResource(R.string.assistant_empty_answer), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else -> Text(lightMarkdown(item.text.trim()))
+                }
                 if (item.done) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     if (r.sources.isNotEmpty()) {

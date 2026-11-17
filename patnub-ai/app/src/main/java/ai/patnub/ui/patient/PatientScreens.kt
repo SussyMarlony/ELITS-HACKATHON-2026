@@ -57,7 +57,7 @@ fun PatientNavigationBar(selected: PatientTab, onSelect: (PatientTab) -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .height(64.dp),
+                    .height(72.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 PatientTab.entries.forEach { tab ->
@@ -96,7 +96,7 @@ private fun ScanTabButton(tab: PatientTab, modifier: Modifier, onClick: () -> Un
             shadowElevation = 8.dp,
             modifier = Modifier
                 .size(56.dp)
-                .offset(y = (-8).dp)
+                .offset(y = (-4).dp)
                 .clickable(onClick = onClick),
         ) {
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxHeight()) {

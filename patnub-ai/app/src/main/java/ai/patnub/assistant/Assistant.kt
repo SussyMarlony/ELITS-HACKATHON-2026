@@ -29,6 +29,9 @@ sealed interface Reply {
     /** Not a health question (decided in code, no model call). */
     data object OffTopic : Reply
 
+    /** Something failed while answering; shown instead of a missing bubble. */
+    data class Failed(val message: String?) : Reply
+
     /**
      * [text] streams pieces. [fallback]: no model ran, the text is the matching reference passage.
      * [grounded]: reference text or the patient's record was given to the model; otherwise the

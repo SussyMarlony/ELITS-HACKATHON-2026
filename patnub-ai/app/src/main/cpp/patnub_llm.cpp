@@ -1,10 +1,13 @@
 // JNI bridge for ai.patnub.engine.NativeEngine.
 //
-// Two runtimes, chosen per phone tier (see ModelCatalog.kt):
-//  - STREAMED: libmsr_engine (msr_engine_* C API). Weights stream from storage into a bounded
-//    arena. Text only; validated with MedGemma 1.5 4B Q4_K_M (msr_engine/LIMITATION.md).
+// One generation loop, two ways to hold the weights (chosen per phone tier, see ModelCatalog.kt):
+//  - STREAMED: msr_engine's streaming provider (msr_external_configure + MSR_NO_ALLOC, the same
+//    load settings as msr_engine_load) keeps weights in a bounded arena. Text only; validated with
+//    MedGemma 1.5 4B Q4_K_M (msr_engine/LIMITATION.md).
 //  - RESIDENT: stock llama.cpp (mmap) plus mtmd for images. Used when the phone has the RAM.
-// The msr provider is a process-wide singleton (LIMITATION.md B3), so one model per process.
+// Both use the same prompt handling (raw chat turns, reasoning pre-fill, special tokens passed
+// through for the Kotlin cleaner, repeat penalty). The provider is a process-wide singleton
+// (LIMITATION.md B3), so one model per process.
 #include <jni.h>
 #ifdef __ANDROID__
 #include <android/log.h>
@@ -25,7 +28,9 @@
 #include <llama.h>
 #include <mtmd.h>
 #include <mtmd-helper.h>
-#include <msr/engine/engine.h>
+#include <msr/msr_external_abi.h>
+
+extern "C" void msr_streaming_cancel();
 
 #define TAG "patnub_llm"
 #ifdef __ANDROID__
@@ -40,7 +45,6 @@ enum class Family { GEMMA3, GEMMA4, OTHER };
 
 struct Bridge {
     bool streamed = false;
-    msr_engine* msr = nullptr;
 
     llama_model* model = nullptr;
     llama_context* ctx = nullptr;
@@ -52,7 +56,7 @@ struct Bridge {
     std::mutex generate_mutex;
     std::string last_error;
 
-    // Resident-mode stats (streamed mode reads msr_engine_get_stats).
+    // Last generation (both modes); streamed mode adds msr_external_get_stats in nativeStats.
     uint64_t prompt_tokens = 0, generated_tokens = 0, ttft_ms = 0, prompt_ms = 0, generate_ms = 0;
 };
 
@@ -106,10 +110,12 @@ std::string format_turn(const Bridge* b, const std::string& user) {
 
 std::string piece_of(const llama_vocab* vocab, llama_token t) {
     char buf[256];
-    int32_t n = llama_token_to_piece(vocab, t, buf, sizeof(buf), 0, false);
+    // special = true: reasoning markers (<unused94>/<unused95>, <|channel>) reach Kotlin, which hides
+    // the reasoning exactly instead of guessing where it ends.
+    int32_t n = llama_token_to_piece(vocab, t, buf, sizeof(buf), 0, true);
     if (n >= 0) return std::string(buf, static_cast<size_t>(n));
     std::vector<char> big(static_cast<size_t>(-n));
-    n = llama_token_to_piece(vocab, t, big.data(), static_cast<int32_t>(big.size()), 0, false);
+    n = llama_token_to_piece(vocab, t, big.data(), static_cast<int32_t>(big.size()), 0, true);
     return n > 0 ? std::string(big.data(), static_cast<size_t>(n)) : std::string();
 }
 
@@ -141,10 +147,6 @@ bool emit(Callback& cb, const char* data, size_t len) {
     cb.env->DeleteLocalRef(arr);
     if (cb.env->ExceptionCheck()) return false;
     return keep == JNI_TRUE;
-}
-
-int msr_token(const char* piece, size_t len, void* user) {
-    return emit(*static_cast<Callback*>(user), piece, len) ? 0 : 1;
 }
 
 // Resident generation with optional image. Returns 0 ok, 7 aborted, 8 error (msr_result codes).
@@ -246,21 +248,9 @@ Java_ai_patnub_engine_NativeEngine_nativeLoad(JNIEnv* env, jclass, jstring jmode
     b->streamed = streamed == JNI_TRUE;
 
     if (b->streamed) {
-        msr_engine_config cfg{};
-        cfg.model_path = model_path.c_str();
-        cfg.budget_bytes = static_cast<uint64_t>(budget);
-        cfg.context_tokens = static_cast<uint32_t>(ctx_tokens);
-        cfg.threads = static_cast<uint32_t>(threads);
-        cfg.read_threads = static_cast<uint32_t>(read_threads);
-        cfg.prefetch = prefetch ? 1 : 0;
-        if (msr_engine_create(&b->msr) != MSR_OK || msr_engine_load(b->msr, &cfg) != MSR_OK) {
-            std::string err = b->msr ? msr_engine_last_error(b->msr) : "msr_engine_create failed";
-            if (b->msr) msr_engine_destroy(b->msr);
-            delete b;
-            throw_java(env, "Could not load the model: " + err);
-            return 0;
-        }
-        return reinterpret_cast<jlong>(b);
+        // Same settings as msr_engine_load: the provider reads them at the first model load.
+        msr_external_configure(model_path.c_str(), static_cast<unsigned long long>(budget), prefetch ? 1 : 0, read_threads);
+        setenv("MSR_NO_ALLOC", "1", 1);
     }
 
     std::call_once(g_backend_once, [] { llama_backend_init(); });
@@ -269,6 +259,10 @@ Java_ai_patnub_engine_NativeEngine_nativeLoad(JNIEnv* env, jclass, jstring jmode
     // No repacking: it copies the weights out of the mmap into a second buffer, close to doubling
     // memory (msr_engine BENCHMARKS: 4,984 vs ~2,624 MiB). Phones need the memory more than the speed.
     mp.use_extra_bufts = false;
+    if (b->streamed) {
+        mp.load_mode = LLAMA_LOAD_MODE_NONE;  // no whole-file mmap; the provider binds the weights
+        mp.lazy_mode = LLAMA_LAZY_MODE_OFF;
+    }
     b->model = llama_model_load_from_file(model_path.c_str(), mp);
     if (!b->model) { delete b; throw_java(env, "Could not load the model file"); return 0; }
     b->vocab = llama_model_get_vocab(b->model);
@@ -284,7 +278,7 @@ Java_ai_patnub_engine_NativeEngine_nativeLoad(JNIEnv* env, jclass, jstring jmode
     b->ctx = llama_init_from_model(b->model, cp);
     if (!b->ctx) { llama_model_free(b->model); delete b; throw_java(env, "Could not create the model context"); return 0; }
 
-    if (!mmproj.empty()) {
+    if (!mmproj.empty() && !b->streamed) {
         mtmd_context_params vp = mtmd_context_params_default();
         vp.use_gpu = false;
         vp.n_threads = cp.n_threads;
@@ -311,13 +305,6 @@ Java_ai_patnub_engine_NativeEngine_nativeGenerate(JNIEnv* env, jclass, jlong han
     const std::string prompt = jstr(env, jprompt);
     const std::string image = jstr(env, jimage);
 
-    if (b->streamed) {
-        if (!image.empty()) { b->last_error = "images need the in-memory model on this phone"; return 1; }
-        if (raw) { b->last_error = "streamed mode formats prompts itself"; return 1; }
-        const msr_result r = msr_engine_generate(b->msr, prompt.c_str(), static_cast<uint32_t>(max_tokens), temperature, seed, msr_token, &cb);
-        if (r != MSR_OK && r != MSR_ABORTED) b->last_error = msr_engine_last_error(b->msr);
-        return static_cast<jint>(r);
-    }
     return generate_resident(b, prompt, image, raw == JNI_TRUE, max_tokens, temperature, seed, cb);
 }
 
@@ -326,7 +313,7 @@ Java_ai_patnub_engine_NativeEngine_nativeCancel(JNIEnv*, jclass, jlong handle) {
     auto* b = reinterpret_cast<Bridge*>(handle);
     if (!b) return;
     b->cancel.store(true);
-    if (b->msr) msr_engine_cancel(b->msr);
+    if (b->streamed) msr_streaming_cancel();  // drops queued prefetches
 }
 
 JNIEXPORT jstring JNICALL
@@ -335,11 +322,11 @@ Java_ai_patnub_engine_NativeEngine_nativeLastError(JNIEnv* env, jclass, jlong ha
     return env->NewStringUTF(b ? b->last_error.c_str() : "no engine");
 }
 
-/** 3 = Gemma 3 family (MedGemma), 4 = Gemma 4, 0 = other or streamed. */
+/** 3 = Gemma 3 family (MedGemma), 4 = Gemma 4, 0 = other. */
 JNIEXPORT jint JNICALL
 Java_ai_patnub_engine_NativeEngine_nativeFamily(JNIEnv*, jclass, jlong handle) {
     auto* b = reinterpret_cast<Bridge*>(handle);
-    if (!b || b->streamed) return 0;
+    if (!b) return 0;
     return b->family == Family::GEMMA3 ? 3 : b->family == Family::GEMMA4 ? 4 : 0;
 }
 
@@ -355,16 +342,15 @@ JNIEXPORT jlongArray JNICALL
 Java_ai_patnub_engine_NativeEngine_nativeStats(JNIEnv* env, jclass, jlong handle) {
     auto* b = reinterpret_cast<Bridge*>(handle);
     jlong v[13] = {0};
-    if (b && b->streamed && b->msr) {
-        msr_engine_stats s{};
-        msr_engine_get_stats(b->msr, &s);
-        jlong t[13] = {(jlong) s.prompt_tokens, (jlong) s.generated_tokens, (jlong) s.ttft_ms, (jlong) s.prompt_ms,
-                       (jlong) s.generate_ms, (jlong) s.budget_bytes, (jlong) s.resident_weight_bytes, (jlong) s.peak_weight_bytes,
-                       (jlong) s.read_bytes, (jlong) s.streamed_layers, (jlong) s.peak_vm_hwm_kb, (jlong) s.peak_vm_rss_kb, (jlong) s.thermal_c};
-        std::memcpy(v, t, sizeof(v));
-    } else if (b) {
+    if (b) {
         v[0] = (jlong) b->prompt_tokens; v[1] = (jlong) b->generated_tokens; v[2] = (jlong) b->ttft_ms;
         v[3] = (jlong) b->prompt_ms; v[4] = (jlong) b->generate_ms;
+        if (b->streamed) {
+            msr_external_stats w{};
+            msr_external_get_stats(&w);
+            v[5] = (jlong) w.budget_bytes; v[6] = (jlong) w.resident_weight_bytes; v[7] = (jlong) w.peak_weight_bytes;
+            v[8] = (jlong) w.read_bytes; v[9] = (jlong) w.streamed_layers;
+        }
         v[10] = proc_status_kb("VmHWM:"); v[11] = proc_status_kb("VmRSS:"); v[12] = -1;
     }
     jlongArray out = env->NewLongArray(13);
@@ -378,7 +364,6 @@ Java_ai_patnub_engine_NativeEngine_nativeFree(JNIEnv*, jclass, jlong handle) {
     if (!b) return;
     b->cancel.store(true);
     std::lock_guard<std::mutex> lock(b->generate_mutex); // never free while generating
-    if (b->msr) msr_engine_destroy(b->msr);
     if (b->vision) mtmd_free(b->vision);
     if (b->ctx) llama_free(b->ctx);
     if (b->model) llama_model_free(b->model);

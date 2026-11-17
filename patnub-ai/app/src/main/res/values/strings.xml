@@ -168,4 +168,6 @@
     <string name="assistant_stop">Stop</string>
     <string name="answer_general_knowledge">From the AI model’s general medical knowledge, not from a reviewed source.</string>
     <string name="assistant_off_topic">I can only help with health questions. Is something bothering you, or do you have a question about a medicine or a visit?</string>
+    <string name="assistant_failed">Something went wrong while answering. Please try again.</string>
+    <string name="assistant_empty_answer">I couldn’t finish an answer that time. Please ask again, or ask a shorter question.</string>
 </resources>
