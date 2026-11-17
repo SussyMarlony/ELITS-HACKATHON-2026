@@ -1,0 +1,3 @@
+[submodule "msr_engine"]
+	path = msr_engine
+	url = https://github.com/keiaa-75/mobile-stream-runtime.git
