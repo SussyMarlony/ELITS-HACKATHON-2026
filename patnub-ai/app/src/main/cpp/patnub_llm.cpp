@@ -89,7 +89,9 @@ Family family_of(const llama_model* model) {
 std::string format_turn(const Bridge* b, const std::string& user) {
     switch (b->family) {
         case Family::GEMMA4: return "<|turn>user\n" + user + "<turn|>\n<|turn>model\n";
-        case Family::GEMMA3: return "<start_of_turn>user\n" + user + "<end_of_turn>\n<start_of_turn>model\n";
+        // MedGemma 1.5 (Gemma 3) writes a visible reasoning block first ("<unused94>thought ... <unused95>")
+        // that can use up the whole token budget. An empty block makes it answer directly.
+        case Family::GEMMA3: return "<start_of_turn>user\n" + user + "<end_of_turn>\n<start_of_turn>model\n<unused94>thought\n<unused95>";
         default: break;
     }
     const char* tmpl = llama_model_chat_template(b->model, nullptr);
@@ -146,7 +148,7 @@ int msr_token(const char* piece, size_t len, void* user) {
 }
 
 // Resident generation with optional image. Returns 0 ok, 7 aborted, 8 error (msr_result codes).
-int generate_resident(Bridge* b, const std::string& prompt, const std::string& image,
+int generate_resident(Bridge* b, const std::string& prompt, const std::string& image, bool raw,
                       int max_tokens, float temperature, int seed, Callback& cb) {
     std::string user = prompt;
     mtmd::bitmap_ptr bmp;
@@ -155,9 +157,10 @@ int generate_resident(Bridge* b, const std::string& prompt, const std::string& i
         mtmd_helper_bitmap_wrapper w = mtmd_helper_bitmap_init_from_file(b->vision, image.c_str(), false, mtmd_helper_init_opt_default());
         if (!w.bitmap) { b->last_error = "could not read the image"; return 1; }
         bmp.reset(w.bitmap);
-        user = std::string(mtmd_default_marker()) + "\n" + prompt;
+        // Raw prompts are already in the chat format; Kotlin put the media marker in the last user turn.
+        if (!raw) user = std::string(mtmd_default_marker()) + "\n" + prompt;
     }
-    const std::string text = format_turn(b, user);
+    const std::string text = raw ? prompt : format_turn(b, user);
 
     llama_memory_clear(llama_get_memory(b->ctx), true);
     const auto t0 = Clock::now();
@@ -198,9 +201,13 @@ int generate_resident(Bridge* b, const std::string& prompt, const std::string& i
     b->prompt_ms = ms_since(t0);
 
     llama_sampler* smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
+    // Small models loop ("I know you have ... I know you have ..."); a mild repeat penalty stops it.
+    llama_sampler_chain_add(smpl, llama_sampler_init_penalties(llama_vocab_n_tokens(b->vocab), 64, 1.15f, 0.0f, 0.0f));
     if (temperature <= 0.0f) {
         llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
     } else {
+        llama_sampler_chain_add(smpl, llama_sampler_init_top_k(40));
+        llama_sampler_chain_add(smpl, llama_sampler_init_top_p(0.95f, 1));
         llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
         llama_sampler_chain_add(smpl, llama_sampler_init_dist(static_cast<uint32_t>(seed)));
     }
@@ -291,7 +298,7 @@ Java_ai_patnub_engine_NativeEngine_nativeLoad(JNIEnv* env, jclass, jstring jmode
 
 JNIEXPORT jint JNICALL
 Java_ai_patnub_engine_NativeEngine_nativeGenerate(JNIEnv* env, jclass, jlong handle, jstring jprompt, jstring jimage,
-                                                  jint max_tokens, jfloat temperature, jint seed, jobject callback) {
+                                                  jboolean raw, jint max_tokens, jfloat temperature, jint seed, jobject callback) {
     auto* b = reinterpret_cast<Bridge*>(handle);
     if (!b) return 1;
     std::lock_guard<std::mutex> lock(b->generate_mutex);
@@ -306,11 +313,12 @@ Java_ai_patnub_engine_NativeEngine_nativeGenerate(JNIEnv* env, jclass, jlong han
 
     if (b->streamed) {
         if (!image.empty()) { b->last_error = "images need the in-memory model on this phone"; return 1; }
+        if (raw) { b->last_error = "streamed mode formats prompts itself"; return 1; }
         const msr_result r = msr_engine_generate(b->msr, prompt.c_str(), static_cast<uint32_t>(max_tokens), temperature, seed, msr_token, &cb);
         if (r != MSR_OK && r != MSR_ABORTED) b->last_error = msr_engine_last_error(b->msr);
         return static_cast<jint>(r);
     }
-    return generate_resident(b, prompt, image, max_tokens, temperature, seed, cb);
+    return generate_resident(b, prompt, image, raw == JNI_TRUE, max_tokens, temperature, seed, cb);
 }
 
 JNIEXPORT void JNICALL
@@ -325,6 +333,14 @@ JNIEXPORT jstring JNICALL
 Java_ai_patnub_engine_NativeEngine_nativeLastError(JNIEnv* env, jclass, jlong handle) {
     auto* b = reinterpret_cast<Bridge*>(handle);
     return env->NewStringUTF(b ? b->last_error.c_str() : "no engine");
+}
+
+/** 3 = Gemma 3 family (MedGemma), 4 = Gemma 4, 0 = other or streamed. */
+JNIEXPORT jint JNICALL
+Java_ai_patnub_engine_NativeEngine_nativeFamily(JNIEnv*, jclass, jlong handle) {
+    auto* b = reinterpret_cast<Bridge*>(handle);
+    if (!b || b->streamed) return 0;
+    return b->family == Family::GEMMA3 ? 3 : b->family == Family::GEMMA4 ? 4 : 0;
 }
 
 JNIEXPORT jboolean JNICALL

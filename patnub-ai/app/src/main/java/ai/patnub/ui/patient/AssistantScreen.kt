@@ -38,6 +38,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.OutlinedButton
+import ai.patnub.assistant.Turn
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.TextButton
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -78,15 +84,33 @@ class ChatState(private val scope: CoroutineScope) {
     var busy by mutableStateOf(false)
         private set
 
+    private var current: Assistant? = null
+
+    /** Stops the answer being written; what arrived so far stays. */
+    fun stop() = current?.cancel()
+
+    /** Earlier exchanges, oldest first, for follow-up questions. Emergency and refusal cards are left out. */
+    private fun history(): List<Turn> = items.mapNotNull { item ->
+        when (item) {
+            is ChatItem.Question -> Turn(fromPatient = true, text = item.text)
+            is ChatItem.Answer -> {
+                val r = item.reply
+                if (r is Reply.Answer && !r.fallback && item.text.isNotBlank()) Turn(fromPatient = false, text = item.text.trim()) else null
+            }
+        }
+    }
+
     fun send(question: String, assistant: Assistant, selfId: String, imagePath: String? = null) {
         val q = question.trim().ifEmpty { if (imagePath != null) "What is in this photo?" else "" }
         if (q.isEmpty() || busy) return
         busy = true
+        current = assistant
+        val earlier = history()
         items += ChatItem.Question(q, hasPhoto = imagePath != null)
         scope.launch {
             val index = items.size
             try {
-                val reply = assistant.ask(q, selfId, imagePath)
+                val reply = assistant.ask(q, selfId, earlier, imagePath)
                 items += ChatItem.Answer(reply)
                 if (reply is Reply.Answer) {
                     try {
@@ -212,7 +236,11 @@ fun AssistantScreen(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { send(input) }),
             )
-            Button(onClick = { send(input) }, enabled = !chat.busy && (input.isNotBlank() || photo != null)) { Text(stringResource(R.string.assistant_send)) }
+            if (chat.busy) {
+                OutlinedButton(onClick = { chat.stop() }) { Text(stringResource(R.string.assistant_stop)) }
+            } else {
+                Button(onClick = { send(input) }, enabled = input.isNotBlank() || photo != null) { Text(stringResource(R.string.assistant_send)) }
+            }
         }
     }
 }
@@ -241,13 +269,17 @@ private fun AnswerBubble(item: ChatItem.Answer) {
         }
         Reply.NoMatch -> Card(bubble) { Text(stringResource(R.string.no_match), Modifier.padding(16.dp)) }
         Reply.NeedsModel -> Card(bubble) { Text(stringResource(R.string.assistant_needs_model), Modifier.padding(16.dp)) }
+        Reply.OffTopic -> Card(bubble) { Text(stringResource(R.string.assistant_off_topic), Modifier.padding(16.dp)) }
         is Reply.Answer -> Card(bubble, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (r.fallback) Label(stringResource(R.string.answer_fallback))
-                if (item.text.isEmpty() && !item.done) TypingDots() else Text(item.text)
-                if (item.done && r.sources.isNotEmpty()) {
+                if (item.text.isEmpty() && !item.done) TypingDots() else Text(lightMarkdown(item.text.trim()))
+                if (item.done) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { r.sources.forEach { SourceChip(it) } }
+                    if (r.sources.isNotEmpty()) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { r.sources.forEach { SourceChip(it) } }
+                    }
+                    if (!r.grounded) Label(stringResource(R.string.answer_general_knowledge))
                     Label(stringResource(R.string.answer_disclaimer))
                     if (r.unreviewed) Label(stringResource(R.string.answer_unreviewed))
                 }
@@ -280,3 +312,24 @@ private fun SourceChip(s: Source) = AssistChip(
     onClick = {},
     label = { Text(s.label, color = if (s.fromClinician) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant) },
 )
+
+/**
+ * The models write light Markdown. Show **bold** as bold and "* " / "- " lines as bullets;
+ * leave everything else as typed.
+ */
+internal fun lightMarkdown(text: String): AnnotatedString = buildAnnotatedString {
+    text.lines().forEachIndexed { i, raw ->
+        if (i > 0) append("\n")
+        val bullet = Regex("^\\s*[*-]\\s+").find(raw)
+        val line = if (bullet != null) "•  " + raw.substring(bullet.range.last + 1) else raw.replace(Regex("^#+\\s*"), "")
+        var rest = line
+        while (true) {
+            val start = rest.indexOf("**")
+            val end = if (start >= 0) rest.indexOf("**", start + 2) else -1
+            if (start < 0 || end < 0) { append(rest); break }
+            append(rest.substring(0, start))
+            withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(rest.substring(start + 2, end)) }
+            rest = rest.substring(end + 2)
+        }
+    }
+}

@@ -12,7 +12,8 @@ public class NativeEngine {
     public interface TokenSink { boolean onToken(byte[] bytes); }
 
     static native long nativeLoad(String model, String vision, boolean streamed, long budget, int ctxTokens, int threads, int readThreads, boolean prefetch);
-    static native int nativeGenerate(long handle, String prompt, String image, int maxTokens, float temperature, int seed, TokenSink sink);
+    static native int nativeGenerate(long handle, String prompt, String image, boolean raw, int maxTokens, float temperature, int seed, TokenSink sink);
+    static native int nativeFamily(long handle);
     static native void nativeCancel(long handle);
     static native String nativeLastError(long handle);
     static native boolean nativeSupportsImages(long handle);
@@ -25,13 +26,16 @@ public class NativeEngine {
         boolean streamed = a[2].equals("1");
         String image = a.length > 4 && !a[4].equals("-") ? a[4] : null;
         int max = a.length > 5 ? Integer.parseInt(a[5]) : 96;
+        boolean raw = a.length > 6 && a[6].equals("raw");
+        float temp = a.length > 7 ? Float.parseFloat(a[7]) : 0f;
 
         long t0 = System.nanoTime();
         long h = nativeLoad(a[0], vision, streamed, streamed ? 1L << 30 : 0, 2048, 4, 4, true);
         System.err.printf("loaded in %.1f s, images=%s%n", (System.nanoTime() - t0) / 1e9, nativeSupportsImages(h));
 
         ByteArrayOutputStream all = new ByteArrayOutputStream();
-        int rc = nativeGenerate(h, a[3], image, max, 0f, 42, bytes -> {
+        System.err.println("family=" + nativeFamily(h));
+        int rc = nativeGenerate(h, a[3], image, raw, max, temp, 42, bytes -> {
             all.writeBytes(bytes);
             return true;
         });

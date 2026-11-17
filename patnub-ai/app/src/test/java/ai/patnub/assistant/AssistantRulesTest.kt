@@ -33,9 +33,10 @@ class AssistantRulesTest {
     @Test fun promptKeepsGeneralAndPersonalApartAndShort() {
         val general = KeywordRanker.rank("headache dizzy stand up", Bundled.knowledge)
         val p = PromptBuilder.build("headache dizzy", general, listOf(record))
-        assertTrue("[General · MedlinePlus" in p)
-        assertTrue("[Your doctor's record · 2026-11-18]" in p)
-        assertTrue(p.length < PromptBuilder.MAX_CONTEXT_CHARS + 800)
+        assertTrue("Reference (MedlinePlus" in p)
+        assertTrue("Their clinician's record (2026-11-18)" in p)
+        assertTrue(p.indexOf("Their clinician's record") < p.indexOf("Reference (MedlinePlus"))
+        assertTrue(p.length < 4_000)
     }
 
     @Test fun fallbackUsesOnlyRetrievedText() {

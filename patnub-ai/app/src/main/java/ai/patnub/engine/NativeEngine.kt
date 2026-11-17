@@ -26,6 +26,12 @@ class NativeEngine : Engine {
 
     override val supportsImages: Boolean get() = images
 
+    @Volatile override var streamed: Boolean = false
+        private set
+
+    @Volatile override var chatFormat: ChatFormat? = null
+        private set
+
     override suspend fun load(config: EngineConfig) {
         if (config.modelPath.isBlank()) throw EngineException(EngineError.INVALID_ARGUMENT, "model path is required")
         val current = _state.value
@@ -40,6 +46,12 @@ class NativeEngine : Engine {
                 )
             }
             images = nativeSupportsImages(handle)
+            streamed = config.streamed
+            chatFormat = when (nativeFamily(handle)) {
+                3 -> ChatFormat.GEMMA3
+                4 -> ChatFormat.GEMMA4
+                else -> null
+            }
             _state.value = EngineState.Ready
         } catch (e: Throwable) {
             val err = EngineException(EngineError.MODEL_ERROR, e.message ?: "model failed to load")
@@ -48,7 +60,7 @@ class NativeEngine : Engine {
         }
     }
 
-    override fun generate(prompt: String, maxTokens: Int, temperature: Float, seed: Int, imagePath: String?): Flow<String> = callbackFlow {
+    override fun generate(prompt: String, maxTokens: Int, temperature: Float, seed: Int, imagePath: String?, raw: Boolean): Flow<String> = callbackFlow {
         if (maxTokens < 1) throw EngineException(EngineError.INVALID_ARGUMENT, "maxTokens must be at least 1")
         val h = handle
         if (h == 0L || _state.value !is EngineState.Ready) throw EngineException(EngineError.NOT_LOADED)
@@ -71,7 +83,7 @@ class NativeEngine : Engine {
             }
         }
         val worker = thread(name = "patnub-llm", isDaemon = true) {
-            val rc = nativeGenerate(h, prompt, imagePath, maxTokens, temperature, seed, sink)
+            val rc = nativeGenerate(h, prompt, imagePath, raw, maxTokens, temperature, seed, sink)
             generating.set(false)
             if (_state.value == EngineState.Generating) _state.value = EngineState.Ready
             when (rc) {
@@ -120,8 +132,9 @@ class NativeEngine : Engine {
             ctxTokens: Int, threads: Int, readThreads: Int, prefetch: Boolean,
         ): Long
         @JvmStatic private external fun nativeGenerate(
-            handle: Long, prompt: String, image: String?, maxTokens: Int, temperature: Float, seed: Int, sink: TokenSink,
+            handle: Long, prompt: String, image: String?, raw: Boolean, maxTokens: Int, temperature: Float, seed: Int, sink: TokenSink,
         ): Int
+        @JvmStatic private external fun nativeFamily(handle: Long): Int
         @JvmStatic private external fun nativeCancel(handle: Long)
         @JvmStatic private external fun nativeLastError(handle: Long): String
         @JvmStatic private external fun nativeSupportsImages(handle: Long): Boolean

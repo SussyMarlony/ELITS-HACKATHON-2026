@@ -15,6 +15,15 @@ interface Engine : AutoCloseable {
     /** True once a model with a vision projector is loaded in memory. */
     val supportsImages: Boolean
 
+    /** True when weights stream from storage (slower); callers keep answers shorter. */
+    val streamed: Boolean
+
+    /**
+     * The loaded model's chat format when callers may send a fully formatted multi-turn prompt
+     * (`raw = true` in [generate]); null when the engine formats prompts itself (streamed mode).
+     */
+    val chatFormat: ChatFormat?
+
     /**
      * `msr_engine_load`: opens the model and binds its weights to the bounded arena.
      * Load is single-shot per engine.
@@ -43,6 +52,7 @@ interface Engine : AutoCloseable {
         temperature: Float = 0f,
         seed: Int = 42,
         imagePath: String? = null,
+        raw: Boolean = false,
     ): Flow<String>
 
     /** `msr_engine_cancel`: stops the running generation. Safe from any thread; no-op when idle. */
@@ -148,3 +158,40 @@ class EngineException(
     val error: EngineError,
     message: String? = null,
 ) : Exception(message ?: error.name)
+
+/** Chat turn markers for the model families we ship. */
+enum class ChatFormat {
+    /** MedGemma 1.5 (Gemma 3). An empty reasoning block makes it answer directly. */
+    GEMMA3,
+    GEMMA4;
+
+    private companion object {
+        const val GEMMA3_ACK = "Understood. I am patnub. I will follow these rules and reply only to the patient."
+    }
+
+    /** Media marker mtmd replaces with the photo's tokens. */
+    val mediaMarker: String get() = "<__media__>"
+
+    /**
+     * [system] then alternating turns (first is the patient), ending with an open model turn.
+     * [lastHasImage] puts the photo marker at the start of the last patient turn.
+     */
+    fun format(system: String, turns: List<Pair<Boolean, String>>, lastHasImage: Boolean): String = buildString {
+        val (open, close) = if (this@ChatFormat == GEMMA3) "<start_of_turn>" to "<end_of_turn>" else "<|turn>" to "<turn|>"
+        if (this@ChatFormat == GEMMA4) {
+            append("${open}system\n$system$close\n")
+        } else {
+            // Gemma 3 has no system role. Merged into the patient's first message, MedGemma restates
+            // the rules instead of answering; as an acknowledged opening exchange it follows them.
+            append("${open}user\n$system$close\n${open}model\n$GEMMA3_ACK$close\n")
+        }
+        turns.forEachIndexed { i, (fromPatient, text) ->
+            val role = if (fromPatient) "user" else "model"
+            var body = text
+            if (i == turns.lastIndex && lastHasImage) body = "$mediaMarker\n$body"
+            append("$open$role\n$body$close\n")
+        }
+        append("${open}model\n")
+        if (this@ChatFormat == GEMMA3) append("<unused94>thought\n<unused95>")
+    }
+}

@@ -132,10 +132,16 @@ Patient-only app (spec v1.2):
   The phone verifies root → license → staff → record, decrypts, shows a preview, and saves only
   after the patient agrees. Corrected versions replace older ones.
 - **Records** lists saved clinician-approved records.
-- **Assistant**: emergency red flags short-circuit before any model call; dose-change questions
-  are referred to the prescriber; otherwise it retrieves reviewed passages and the patient's own
-  consented records and streams an answer from the on-device model (photo questions where the
-  model reads photos), or answers from the retrieved text when no model is installed.
+- **Assistant**: a conversation, not one-shot answers. Emergency red flags short-circuit before
+  any model call; dose-change questions go to the prescriber; clearly non-health openers get a
+  fixed reply. Otherwise it searches the conversation (everyday English and Tagalog words are
+  mapped to the reference vocabulary, rarer words count more) and sends real chat turns to the
+  model with instructions to act like a careful clinic nurse: ask 2–3 short questions when the
+  complaint is vague, then give possible common causes, self-care and warning signs, in the
+  patient's language. Answers say when they come from the model's general knowledge rather than a
+  reviewed passage. Without a model it answers from the matching passage, or gives a symptom
+  checklist to bring to the clinic. A Stop button cancels a long answer.
+  Tested on PC with both real models (`scripts/test-conversation.sh`).
 - **Medicines**: search, or scan packaging (ML Kit text recognition, offline) followed by a
   mandatory name/strength/form confirmation; shows label info apart from the patient’s own
   prescription and flags strength conflicts without picking one. Medicine text is copied word for word

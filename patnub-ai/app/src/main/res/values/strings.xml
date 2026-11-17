@@ -84,7 +84,7 @@
     <string name="emergency_call">Call 911</string>
     <string name="ask_prescriber">Please don’t change how you take your medicine without asking the clinician who prescribed it. Contact your clinic. If you feel very unwell, get care now.</string>
     <string name="ask_prescriber_named">Please don’t change how you take your medicine without asking %1$s, who prescribed it. Contact your clinic. If you feel very unwell, get care now.</string>
-    <string name="no_match">I couldn’t find this in the reviewed sources or your records, so I won’t guess. Please ask your clinician.</string>
+    <string name="no_match">I don’t have reviewed information on this yet, and the AI model isn’t installed, so I can’t reason about it with you. To help your clinician, note: when it started, how bad it is from 0 to 10, exactly where, what makes it better or worse, and any other symptoms like fever, swelling or numbness. Get care today if it is severe, getting worse, or you can’t use the body part.</string>
     <string name="answer_fallback">From your saved sources · the AI model is not installed yet</string>
     <string name="answer_disclaimer">Information only, not a diagnosis.</string>
 
@@ -161,4 +161,7 @@
     <string name="med_verbatim">Copied word for word from the official drug label. Strengths and brands in the Philippines may differ.</string>
     <string name="med_unreviewed">Not yet reviewed by a clinician for this app.</string>
     <string name="med_open_source">Open the full label</string>
+    <string name="assistant_stop">Stop</string>
+    <string name="answer_general_knowledge">From the AI model’s general medical knowledge, not from a reviewed source.</string>
+    <string name="assistant_off_topic">I can only help with health questions. Is something bothering you, or do you have a question about a medicine or a visit?</string>
 </resources>

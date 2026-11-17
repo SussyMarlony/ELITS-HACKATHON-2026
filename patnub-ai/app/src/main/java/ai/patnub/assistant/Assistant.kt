@@ -8,6 +8,7 @@ import ai.patnub.engine.EngineState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flowOf
+import ai.patnub.assistant.AnswerCleaner.cleaned
 
 /** Where an answer's facts came from, shown as badges under the reply. */
 data class Source(val label: String, val fromClinician: Boolean)
@@ -19,33 +20,48 @@ sealed interface Reply {
     /** Dose or schedule change requested: refer to the prescriber (Spec §4.2). */
     data class AskPrescriber(val prescriber: String?) : Reply
 
-    /** Nothing close in reviewed sources: do not guess (Spec §4.3). */
+    /** No model installed and nothing in the reviewed sources: structured questions to bring to a clinician. */
     data object NoMatch : Reply
 
     /** A photo question while no model that reads photos is loaded. */
     data object NeedsModel : Reply
 
+    /** Not a health question (decided in code, no model call). */
+    data object OffTopic : Reply
+
     /**
-     * [text] streams pieces. [fallback] when no model ran and the text comes from the sources.
-     * [unreviewed] when a cited reference passage has no clinician sign-off yet.
+     * [text] streams pieces. [fallback]: no model ran, the text is the matching reference passage.
+     * [grounded]: reference text or the patient's record was given to the model; otherwise the
+     * answer is the model's general knowledge and the UI says so. [unreviewed]: a cited passage
+     * has no clinician sign-off yet.
      */
-    data class Answer(val text: Flow<String>, val sources: List<Source>, val fallback: Boolean, val unreviewed: Boolean = false) : Reply
+    data class Answer(
+        val text: Flow<String>,
+        val sources: List<Source>,
+        val fallback: Boolean,
+        val grounded: Boolean = true,
+        val unreviewed: Boolean = false,
+    ) : Reply
 }
 
 /**
- * The Assistant pipeline (build plan Phase 2): red-flag gate → dose-change guard →
- * dual-collection retrieval with patient isolation → grounded prompt → streamed answer,
- * with a deterministic fallback whenever the model is not ready or busy.
+ * The Assistant pipeline (build plan Phase 2): red-flag gate → dose-change guard → retrieval over
+ * the conversation (reference passages + the patient's own consented records) → conversational
+ * prompt → streamed answer. With a model it can ask follow-up questions and reason about possible
+ * causes; without one it answers from the matching passage or gives a structured symptom checklist.
  */
 class Assistant(private val db: PatnubDatabase, private val engine: Engine) {
 
-    val supportsImages: Boolean get() = engine.state.value.let { it == EngineState.Ready || it == EngineState.Generating } && engine.supportsImages
+    val supportsImages: Boolean get() = modelReady && engine.supportsImages
+    private val modelReady: Boolean get() = engine.state.value.let { it == EngineState.Ready || it == EngineState.Generating }
+
+    fun cancel() = engine.cancel()
 
     /**
      * [selfId] is the phone owner. It is never taken from the question text.
-     * [imagePath] is an optional photo, used only when [supportsImages].
+     * [history] is the conversation so far (oldest first), used for follow-up answers.
      */
-    suspend fun ask(question: String, selfId: String, imagePath: String? = null): Reply {
+    suspend fun ask(question: String, selfId: String, history: List<Turn> = emptyList(), imagePath: String? = null): Reply {
         RedFlagGate.check(question)?.let { return Reply.Emergency(it) }
 
         val records = db.clinicalRecordDao().getConsentedIssued(selfId)
@@ -54,36 +70,57 @@ class Assistant(private val db: PatnubDatabase, private val engine: Engine) {
             return Reply.AskPrescriber(prescriber)
         }
 
-        val general = KeywordRanker.rank(question, db.knowledgeChunkDao().getApproved())
+        // Follow-up replies ("3 days, it's swollen") carry no topic; search the recent patient turns too.
+        val searchText = (history.filter { it.fromPatient }.takeLast(2).map { it.text } + question).joinToString(" ")
+        val general = KeywordRanker.rank(searchText, db.knowledgeChunkDao().getApproved())
         val personal = records
-            .map { it to KeywordRanker.score(question, recordText(it)) }
+            .map { it to KeywordRanker.score(searchText, recordText(it)) }
             .filter { it.second > 0.0 }
             .sortedByDescending { it.second }
             .take(2)
             .map { it.first }
-        if (imagePath != null && !supportsImages) return Reply.NeedsModel
-        // A photo question can stand on its own; a text question needs a reviewed source.
-        if (imagePath == null && general.isEmpty() && personal.isEmpty()) return Reply.NoMatch
 
         val sources = general.map { Source(it.chunk.sourceTitle, fromClinician = false) }.distinct() +
             personal.map { Source(clinicianLabel(it), fromClinician = true) }
+        val unreviewed = general.any { it.chunk.reviewedBy == null }
+        // Small models handle "not about health" badly (they explain their rules instead), so decide it
+        // here: only an opening message with no matching passage, no record and no health word at all.
+        if (history.isEmpty() && imagePath == null && general.isEmpty() && personal.isEmpty() && !Language.mentionsHealth(question)) {
+            return Reply.OffTopic
+        }
         val fallbackText = fallback(general, personal)
 
-        if (engine.state.value != EngineState.Ready) {
-            return Reply.Answer(flowOf(fallbackText), sources, fallback = true, unreviewed = general.any { it.chunk.reviewedBy == null })
+        if (imagePath != null && !supportsImages) return Reply.NeedsModel
+        if (!modelReady) {
+            return if (fallbackText.isBlank()) Reply.NoMatch
+            else Reply.Answer(flowOf(fallbackText), sources, fallback = true, unreviewed = unreviewed)
         }
-        val prompt = PromptBuilder.build(question, general, personal, withImage = imagePath != null)
-        val stream = engine.generate(prompt, maxTokens = MAX_TOKENS, imagePath = imagePath)
+
+        val format = engine.chatFormat
+        val prompt = if (format != null) {
+            PromptBuilder.chat(format, question, general, personal, history, withImage = imagePath != null)
+        } else {
+            PromptBuilder.build(question, general, personal, history, withImage = imagePath != null)
+        }
+        val maxTokens = if (engine.streamed) MAX_TOKENS_STREAMED else MAX_TOKENS
+        val stream = engine.generate(prompt, maxTokens = maxTokens, temperature = 0.3f, imagePath = imagePath, raw = format != null)
+            .cleaned()
             .catch { e -> if (e is EngineException && fallbackText.isNotBlank()) emit(fallbackText) else throw e }
-        return Reply.Answer(stream, sources, fallback = false, unreviewed = general.any { it.chunk.reviewedBy == null })
+        return Reply.Answer(
+            stream, sources, fallback = false,
+            grounded = general.isNotEmpty() || personal.isNotEmpty(), unreviewed = unreviewed,
+        )
     }
 
     private suspend fun clinicianLabel(r: ClinicalRecordEntity): String =
         db.userDao().getById(r.clinicianId)?.let { "${it.displayName} · ${r.encounterDate}" } ?: "Your clinician · ${r.encounterDate}"
 
     companion object {
-        /** Short answers: ~10 s on a mid-tier phone streaming at 3 tok/s, ~3 s fully in memory. */
-        const val MAX_TOKENS = 128
+        /** ~20 s on a phone holding the model in memory. */
+        const val MAX_TOKENS = 220
+
+        /** Streamed MedGemma runs ~3 tok/s: keep answers short enough to wait for. */
+        const val MAX_TOKENS_STREAMED = 140
 
         fun recordText(r: ClinicalRecordEntity) = listOfNotNull(
             r.assessment, r.meds.joinToString { "${it.name} ${it.dose} ${it.frequency}" },
