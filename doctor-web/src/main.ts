@@ -165,15 +165,11 @@ function render() {
     <header class="topbar">
       <div class="brand">
         <img src="/logo-wide.png" alt="patnub.ai" width="124" height="40" />
-        <span class="brand-tag">Clinic</span>
+        <span class="brand-sub">Clinic</span>
+        ${s.license ? `<span class="clinic-label">${esc(s.license.body.clinic_name)}</span>` : ''}
       </div>
-      <div class="status-group">
-        <span class="pill ${navigator.onLine ? 'pill-good' : 'pill-off'}">
-          <span class="dot" aria-hidden="true"></span>
-          ${navigator.onLine ? 'Ready · offline-capable' : 'Offline mode'}
-        </span>
-        ${s.license ? `<span class="pill ${licActive ? '' : 'pill-bad'}">${esc(s.license.body.clinic_name)} · ${licActive ? `valid ${daysLeft(s.license.body.exp)}d` : 'license expired'}</span>` : ''}
-      </div>
+      ${!navigator.onLine ? '<span class="pill pill-off">Offline</span>' : ''}
+      ${s.license && !licActive ? '<span class="pill pill-bad">License expired</span>' : ''}
       <span class="grow"></span>
       ${s.session ? `
         ${s.panel === 'admin' ? `
@@ -220,25 +216,28 @@ function authShell(cardHtml: string) {
   return `<div class="auth-shell">
     <aside class="auth-stage">
       <div>
-        <span class="auth-pill">${ico.shield} Offline-first clinic workstation</span>
+        <div class="stage-brand">
+          <img class="stage-logo" src="/logo-wide.png" alt="patnub.ai" width="152" height="48" />
+          <span class="stage-sub">Clinic</span>
+        </div>
         <h2>Clinical records that travel safely on the patient’s phone.</h2>
         <p class="lead">Write consultations naturally in English or Taglish. patnub turns your approved summary into an encrypted QR code that opens only on that patient’s device.</p>
       </div>
       <div class="stage-preview" aria-hidden="true">
         <div class="stage-preview-head">
           <span>Offline visit workflow</span>
-          <span class="stage-preview-pill">Zero internet required</span>
+          <span>No internet required</span>
         </div>
         <div class="pipeline-steps">
           <div class="pipe-card">
             <span class="pipe-num">01 · CHECK-IN</span>
             <b>Scan patient phone</b>
-            <span>Pairs their X25519 key in one second via webcam.</span>
+            <span>Pairs their X25519 key in one second via camera.</span>
           </div>
           <div class="pipe-card">
             <span class="pipe-num">02 · VERIFY</span>
             <b>Structured draft</b>
-            <span>Extracts meds, instructions &amp; red flags for your sign-off.</span>
+            <span>Extracts meds, instructions &amp; warning signs for sign-off.</span>
           </div>
           <div class="pipe-card">
             <span class="pipe-num">03 · SHARE</span>
@@ -246,23 +245,16 @@ function authShell(cardHtml: string) {
             <span>24-hour signed record readable only on their phone.</span>
           </div>
         </div>
-        <div class="pipe-sample">
-          <span class="pipe-chip">Stage 1 hypertension</span>
-          <span class="pipe-chip">Amlodipine 5 mg · once daily</span>
-          <span class="pipe-chip">Ed25519 + X25519</span>
-        </div>
       </div>
       <ul class="guarantees">
-        <li>${ico.shield}<strong>Local storage</strong><span>Records stay in this browser’s IndexedDB and work offline in any RHU.</span></li>
-        <li>${ico.qr}<strong>Device-locked</strong><span>Other phones cannot decrypt or tamper with the QR payload.</span></li>
+        <li>${ico.shield}<strong>Local storage</strong><span>Records stay in this browser and work offline in any RHU.</span></li>
+        <li>${ico.qr}<strong>Device-locked</strong><span>Other phones cannot decrypt or alter the QR payload.</span></li>
         <li>${ico.clock}<strong>Clinician-approved</strong><span>Raw clinical notes never leave this device—only approved fields.</span></li>
       </ul>
     </aside>
     <div class="auth-panel"><div class="auth-inner">${cardHtml}</div></div>
   </div>`;
 }
-
-const hero = '<img class="hero" src="/logo-mark.png" alt="" width="48" height="48" />';
 
 function passwordInput(name: string, attrs = '') {
   return `<div class="pw-wrap">
@@ -274,7 +266,6 @@ function passwordInput(name: string, attrs = '') {
 function viewActivate() {
   return authShell(`
     <div class="setup-rail"><span class="on">1 · Clinic license</span><i></i><span>2 · First clinician</span></div>
-    ${hero}
     <h2>Activate this clinic</h2>
     <p class="muted">Drop or choose the signed license file patnub issued for your clinic. This only needs to be done once on this device.</p>
     <label class="dropzone" data-drop="license">
@@ -303,7 +294,6 @@ function clinicianFields(prefix = '') {
 function viewFirstAdmin() {
   return authShell(`<form data-form="first-admin">
     <div class="setup-rail"><span class="done">✓ License verified</span><i></i><span class="on">2 · First clinician</span></div>
-    ${hero}
     <h2>Create the first clinician</h2>
     <p class="muted">This account is also the clinic admin for <b>${esc(st.license?.body.clinic_name ?? '')}</b>. It can add staff and export backups.</p>
     ${clinicianFields()}
@@ -314,7 +304,6 @@ function viewFirstAdmin() {
 function viewSignIn() {
   const active = st.staff.filter((x) => !x.disabled);
   return authShell(`<form data-form="sign-in">
-    ${hero}
     <h2>Sign in to ${esc(st.license?.body.clinic_name ?? 'Clinic')}</h2>
     <p class="muted">Select your profile and enter your local passcode to unlock clinic records.</p>
     ${st.lockedFrom ? '<p class="note">Signed out automatically after 10 minutes of inactivity to protect patient privacy on this shared device.</p>' : ''}
