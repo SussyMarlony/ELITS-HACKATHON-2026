@@ -212,19 +212,47 @@ function focusOnViewChange() {
 
 function authShell(cardHtml: string) {
   return `<div class="auth-shell">
-    <aside class="auth-aside">
+    <aside class="auth-stage">
       <div>
         <span class="auth-pill">${ico.shield} Offline-first clinic workstation</span>
-        <h2 style="margin-top:16px">Clinical records that travel safely on the patient’s phone.</h2>
-        <p>Write consultations naturally in English or Taglish. patnub turns your approved summary into an encrypted QR code that opens only on that patient’s device.</p>
+        <h2>Clinical records that travel safely on the patient’s phone.</h2>
+        <p class="lead">Write consultations naturally in English or Taglish. patnub turns your approved summary into an encrypted QR code that opens only on that patient’s device.</p>
+      </div>
+      <div class="stage-preview" aria-hidden="true">
+        <div class="stage-preview-head">
+          <span>Offline visit workflow</span>
+          <span class="stage-preview-pill">Zero internet required</span>
+        </div>
+        <div class="pipeline-steps">
+          <div class="pipe-card">
+            <span class="pipe-num">01 · CHECK-IN</span>
+            <b>Scan patient phone</b>
+            <span>Pairs their X25519 key in one second via webcam.</span>
+          </div>
+          <div class="pipe-card">
+            <span class="pipe-num">02 · VERIFY</span>
+            <b>Structured draft</b>
+            <span>Extracts meds, instructions &amp; red flags for your sign-off.</span>
+          </div>
+          <div class="pipe-card">
+            <span class="pipe-num">03 · SHARE</span>
+            <b>Sealed QR code</b>
+            <span>24-hour signed record readable only on their phone.</span>
+          </div>
+        </div>
+        <div class="pipe-sample">
+          <span class="pipe-chip">Stage 1 hypertension</span>
+          <span class="pipe-chip">Amlodipine 5 mg · once daily</span>
+          <span class="pipe-chip">Ed25519 + X25519</span>
+        </div>
       </div>
       <ul class="guarantees">
-        <li>${ico.shield}<div><strong>Zero cloud dependency</strong><span>Records stay in this browser’s encrypted storage and work completely offline in the RHU.</span></div></li>
-        <li>${ico.qr}<div><strong>Locked to the patient’s phone</strong><span>Sealed with Ed25519 + X25519. Other phones cannot decrypt the QR code.</span></div></li>
-        <li>${ico.clock}<div><strong>Clinician always in control</strong><span>Nothing reaches a patient until you verify every medicine, instruction, and warning sign.</span></div></li>
+        <li>${ico.shield}<strong>Local storage</strong><span>Records stay in this browser’s IndexedDB and work offline in any RHU.</span></li>
+        <li>${ico.qr}<strong>Device-locked</strong><span>Other phones cannot decrypt or tamper with the QR payload.</span></li>
+        <li>${ico.clock}<strong>Clinician-approved</strong><span>Raw clinical notes never leave this device—only approved fields.</span></li>
       </ul>
     </aside>
-    <div class="card auth-card">${cardHtml}</div>
+    <div class="auth-panel"><div class="auth-inner">${cardHtml}</div></div>
   </div>`;
 }
 
@@ -239,11 +267,12 @@ function passwordInput(name: string, attrs = '') {
 
 function viewActivate() {
   return authShell(`
+    <div class="setup-rail"><span class="on">1 · Clinic license</span><i></i><span>2 · First clinician</span></div>
     ${hero}
     <h2>Activate this clinic</h2>
     <p class="muted">Drop or choose the signed license file patnub issued for your clinic. This only needs to be done once on this device.</p>
     <label class="dropzone" data-drop="license">
-      ${ico.upload}
+      <span class="dropzone-icon">${ico.upload}</span>
       <b>Drop license.json here, or click to browse</b>
       <span>Verified offline against the patnub root key</span>
       <input type="file" accept=".json,application/json" data-change="license-file">
@@ -267,6 +296,7 @@ function clinicianFields(prefix = '') {
 
 function viewFirstAdmin() {
   return authShell(`<form data-form="first-admin">
+    <div class="setup-rail"><span class="done">✓ License verified</span><i></i><span class="on">2 · First clinician</span></div>
     ${hero}
     <h2>Create the first clinician</h2>
     <p class="muted">This account is also the clinic admin for <b>${esc(st.license?.body.clinic_name ?? '')}</b>. It can add staff and export backups.</p>
@@ -329,7 +359,7 @@ function viewHome() {
         <form data-form="paste-checkin"><textarea name="code" rows="3" placeholder="PATNUB:CI1:..."></textarea><button class="btn btn-sm block">Read code</button></form>
       </details>` : ''}
     </aside>
-    <main class="canvas">${st.panel === 'admin' ? viewAdmin() : st.selected ? viewPatient(st.selected) : viewDashboard()}</main>
+    <main class="canvas canvas-enter">${st.panel === 'admin' ? viewAdmin() : st.selected ? viewPatient(st.selected) : viewDashboard()}</main>
   </div>`;
 }
 
@@ -359,22 +389,22 @@ function viewDashboard() {
     </section>
 
     <section class="kpi-grid" aria-label="Clinic summary">
-      <div class="kpi">
+      <div class="kpi stagger" style="--i:0">
         <span class="eyebrow">Patients on device</span>
         <span class="kpi-val">${st.patients.length}</span>
         <span class="kpi-sub">${st.staff.filter((x) => !x.disabled).length} active clinician(s)</span>
       </div>
-      <div class="kpi">
+      <div class="kpi stagger" style="--i:1">
         <span class="eyebrow">Issued today</span>
         <span class="kpi-val">${todayCount}</span>
         <span class="kpi-sub">${issued.length} total approved record(s)</span>
       </div>
-      <div class="kpi">
+      <div class="kpi stagger" style="--i:2">
         <span class="eyebrow">Active QR codes</span>
         <span class="kpi-val">${validQrs}</span>
         <span class="kpi-sub">24-hour patient scan window</span>
       </div>
-      <div class="kpi">
+      <div class="kpi stagger" style="--i:3">
         <span class="eyebrow">Clinic license</span>
         <span class="kpi-val">${licDays}d</span>
         <span class="kpi-sub">${st.license && licenseActive(st.license) ? `Valid until ${new Date(st.license.body.exp * 1000).toLocaleDateString()}` : 'Renewal needed'}</span>
@@ -668,7 +698,10 @@ function viewAdmin() {
       <div class="card">
         <h3>Reset device</h3>
         <p class="muted small">Deletes the license, clinicians, patients, and records from this browser. Export a backup first if needed.</p>
-        <button class="btn danger" data-action="erase">Erase everything</button>
+        <button type="button" class="btn btn-hold" data-hold-erase>
+          <span>Hold 1.5s to erase everything</span>
+          <span class="btn-hold-fill" aria-hidden="true">Erasing… keep holding</span>
+        </button>
       </div>
     </div>
   </div>`;
@@ -729,11 +762,22 @@ function toast(text: string, kind: 'ok' | 'error' = 'ok') {
   const t = Object.assign(document.createElement('div'), { className: `toast ${kind}`, textContent: text });
   if (kind === 'error') t.setAttribute('role', 'alert');
   toasts.append(t);
-  setTimeout(() => {
+  let remaining = kind === 'error' ? 6000 : 3000;
+  let started = Date.now();
+  let timer = setTimeout(dismiss, remaining);
+  function dismiss() {
     t.classList.add('leaving');
     t.addEventListener('transitionend', () => t.remove(), { once: true });
-    setTimeout(() => t.remove(), 400);
-  }, kind === 'error' ? 6000 : 3000);
+    setTimeout(() => t.remove(), 300);
+  }
+  t.addEventListener('mouseenter', () => {
+    clearTimeout(timer);
+    remaining = Math.max(400, remaining - (Date.now() - started));
+  });
+  t.addEventListener('mouseleave', () => {
+    started = Date.now();
+    timer = setTimeout(dismiss, remaining);
+  });
 }
 
 // ---------- guards & form helpers ----------
@@ -952,9 +996,6 @@ app.addEventListener('click', (ev) => {
     case 'scan':
       if (!leaveOk()) return;
       return void startScan();
-    case 'erase':
-      if (!confirm('Erase all clinic data on this device? This cannot be undone.')) return;
-      return void eraseDevice().then(() => location.reload());
     case 'checkin-cancel': st.pendingCheckIn = undefined; return render();
     case 'checkin-separate': {
       const c = st.pendingCheckIn as Extract<CheckInResult, { kind: 'new-phone' }>;
@@ -979,11 +1020,35 @@ app.addEventListener('click', (ev) => {
   }
 });
 
-// Keyboard activation on the clickable QR card
+// Hold-to-erase (1.5s linear fill via clip-path; instant 180ms release snap-back)
+let holdTimer: ReturnType<typeof setTimeout> | null = null;
+const cancelHold = () => {
+  if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+  app.querySelectorAll('.btn-hold.holding').forEach((b) => b.classList.remove('holding'));
+};
+app.addEventListener('pointerdown', (ev) => {
+  const btn = (ev.target as HTMLElement).closest<HTMLElement>('[data-hold-erase]');
+  if (!btn || ev.button !== 0) return;
+  cancelHold();
+  btn.classList.add('holding');
+  holdTimer = setTimeout(() => {
+    holdTimer = null;
+    void eraseDevice().then(() => location.reload());
+  }, 1500);
+});
+['pointerup', 'pointercancel', 'pointerleave'].forEach((t) => app.addEventListener(t, cancelHold, true));
+
+// Keyboard activation on the clickable QR card & hold-erase fallback
 app.addEventListener('keydown', (ev) => {
   if ((ev.key === 'Enter' || ev.key === ' ') && (ev.target as HTMLElement).classList.contains('qr-card')) {
     ev.preventDefault();
     if (st.shown) present(st.shown);
+  }
+  if (ev.key === 'Enter' && (ev.target as HTMLElement).hasAttribute('data-hold-erase')) {
+    ev.preventDefault();
+    if (confirm('Erase all clinic data on this device? This cannot be undone.')) {
+      void eraseDevice().then(() => location.reload());
+    }
   }
 });
 
