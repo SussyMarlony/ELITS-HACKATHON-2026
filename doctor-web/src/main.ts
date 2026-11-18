@@ -3,11 +3,12 @@ import qrcode from 'qrcode-generator';
 import type { KeyPair } from '../../contract/contract.ts';
 import {
   activateLicense, checkClinician, createClinician, eraseDevice, exportBackup, getLicense, importBackup, issue, licenseActive,
-  listPatients, listStaff, qrValid, readCheckIn, recordsFor, reissue, savePatient, setDisabled, signIn,
+  listAllRecords, listAudit, listPatients, listStaff, qrValid, readCheckIn, recordsFor, reissue, savePatient, setDisabled, signIn,
   type CheckInResult, type Session,
 } from './clinic.ts';
 import { draftFromNote, type Draft } from './draft.ts';
-import type { ClinicRecord, License, Patient, Staff } from './store.ts';
+import { attachDragDismiss, syncSegmentedPill } from './spring.ts';
+import type { AuditEvent, ClinicRecord, License, Patient, Staff } from './store.ts';
 import './style.css';
 
 type Stage = 'history' | 'write' | 'review' | 'qr';
@@ -18,6 +19,8 @@ const st: {
   session?: Session;
   pendingAdmin?: KeyPair; // admin key from a just-imported license, until the first account exists
   patients: Patient[];
+  allRecords: ClinicRecord[];
+  auditLog: AuditEvent[];
   selected?: Patient;
   records: ClinicRecord[];
   panel: 'patient' | 'admin';
@@ -32,12 +35,15 @@ const st: {
   /** Set when the idle lock signed someone out; their unfinished consultation is kept for them only. */
   lockedFrom?: string;
   loaded: boolean;
-} = { staff: [], patients: [], records: [], panel: 'patient', stage: 'history', note: '', encounterDate: today(), query: '', loaded: false };
+} = {
+  staff: [], patients: [], allRecords: [], auditLog: [], records: [],
+  panel: 'patient', stage: 'history', note: '', encounterDate: today(), query: '', loaded: false,
+};
 
 const DEBUG = new URLSearchParams(location.search).has('debug');
 const IDLE_LOCK_MS = 10 * 60_000; // shared clinic device (spec v1.2)
-
 const app = document.querySelector<HTMLElement>('#app')!;
+let modalDragCleanup: (() => void) | null = null;
 
 function today() {
   const d = new Date();
@@ -47,6 +53,14 @@ function today() {
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const fmtDate = (unix: number) => new Date(unix * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 const fmtDay = (iso: string) => new Date(`${iso}T00:00`).toLocaleDateString(undefined, { dateStyle: 'medium' });
+const fmtRelTime = (ms: number) => {
+  const mins = Math.max(0, Math.floor((Date.now() - ms) / 60_000));
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
 
 /** "23 h 59 m" left, or null when expired. */
 function timeLeft(expUnix: number): string | null {
@@ -54,7 +68,36 @@ function timeLeft(expUnix: number): string | null {
   if (m < 0) return null;
   return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} m` : `${m} m`;
 }
+
+function daysLeft(expUnix: number): number {
+  return Math.max(0, Math.ceil((expUnix * 1000 - Date.now()) / 86_400_000));
+}
+
 const by = (s: Staff | undefined) => (s ? `${s.body.name}, ${s.body.profession}` : 'Unknown clinician');
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function hueFor(name: string): number {
+  let h = 178;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+  return h;
+}
+
+function avatarHtml(name: string, size: 'sm' | 'md' | 'lg' = 'md'): string {
+  return `<span class="avatar avatar-${size}" style="--hue:${hueFor(name)}" aria-hidden="true">${esc(initials(name))}</span>`;
+}
+
+function greeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+}
 
 function qrSvg(text: string): string {
   const q = qrcode(0, 'M');
@@ -63,9 +106,45 @@ function qrSvg(text: string): string {
   return q.createSvgTag({ cellSize: 4, margin: 4, scalable: true });
 }
 
+// Inline icons (offline-safe, zero network font requests)
+const ico = {
+  camera: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
+  search: '<svg class="ico ico-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
+  plus: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  qr: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v3M14 20h6M20 20v.01"/></svg>',
+  upload: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
+  eye: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>',
+  shield: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  clock: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>',
+  expand: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>',
+  back: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
+};
+
+const TEMPLATES: Array<{ label: string; note: string }> = [
+  {
+    label: 'Hypertension',
+    note: 'Patient seen for recurring headaches for 2 weeks with BP 150/95 on two readings. Assessment: Stage 1 hypertension. Start Amlodipine 5 mg once daily in the morning. Reduce salt intake, especially instant noodles and bagoong. Walk 30 minutes a day. Follow up in 4 weeks with the BP log. Seek emergency care if severe headache, chest pain, blurred vision, or weakness on one side.',
+  },
+  {
+    label: 'Cough / URI',
+    note: 'Patient with 3 days of dry cough and mild sore throat, afebrile, clear lungs. Assessment: Acute upper respiratory tract infection. Take Paracetamol 500 mg every 6 hours as needed for fever or body ache. Drink plenty of warm water and rest. Follow up in 5 days if cough persists. Seek emergency care if difficulty breathing, high fever, or chest pain.',
+  },
+  {
+    label: 'Gastroenteritis (Taglish)',
+    note: 'Assessment: Acute gastroenteritis. Uminom ng ORS pagkatapos ng bawat pagdumi. Kumain ng malambot na pagkain at iwasan muna ang gatas o kape. Balik po after 3 days kung hindi gumaling. Seek emergency care if signs of dehydration, bloody stool, or persistent vomiting.',
+  },
+  {
+    label: 'Wound care',
+    note: 'Superficial laceration on right shin, cleaned with saline, no active bleeding. Assessment: Minor skin laceration. Keep the wound clean and dry, change dressing once daily. Take Paracetamol 500 mg every 6 hours as needed for pain. Follow up in 3 days for wound check. Seek emergency care if spreading redness, pus, swelling, or fever.',
+  },
+];
+
 // ---------- rendering ----------
 
 function render() {
+  modalDragCleanup?.();
+  modalDragCleanup = null;
+
   const s = st;
   let body: string;
   if (!s.loaded) body = ''; // first paint: header only, until IndexedDB answers
@@ -73,17 +152,52 @@ function render() {
   else if (!s.staff.length) body = viewFirstAdmin();
   else if (!s.session) body = viewSignIn();
   else body = viewHome();
+
+  const licActive = s.license ? licenseActive(s.license) : false;
   app.innerHTML = `
-    <header class="top">
-      <h1 class="brand"><img src="/logo-wide.png" alt="patnub.ai" width="132" height="44" /><span>Clinic</span></h1>
-      <span class="pill ${navigator.onLine ? '' : 'pill-off'}">${navigator.onLine ? 'Online' : 'Offline'} · works without internet</span>
-      ${s.license ? `<span class="pill ${licenseActive(s.license) ? '' : 'pill-bad'}">${esc(s.license.body.clinic_name)} · license ${licenseActive(s.license) ? 'until' : 'expired'} ${new Date(s.license.body.exp * 1000).toLocaleDateString()}</span>` : ''}
-      ${s.session ? `<span class="grow"></span><span class="who">${esc(by(s.session.staff))}</span>
-        ${s.session.admin ? `<button class="btn btn-sm" data-action="panel" data-panel="${s.panel === 'admin' ? 'patient' : 'admin'}">${s.panel === 'admin' ? 'Patients' : 'Clinic admin'}</button>` : ''}
-        <button class="btn btn-sm" data-action="sign-out">Sign out</button>` : ''}
+    <header class="topbar">
+      <div class="brand">
+        <img src="/logo-wide.png" alt="patnub.ai" width="124" height="40" />
+        <span class="brand-tag">Clinic</span>
+      </div>
+      <div class="status-group">
+        <span class="pill ${navigator.onLine ? 'pill-good' : 'pill-off'}">
+          <span class="dot" aria-hidden="true"></span>
+          ${navigator.onLine ? 'Ready · offline-capable' : 'Offline mode'}
+        </span>
+        ${s.license ? `<span class="pill ${licActive ? '' : 'pill-bad'}">${esc(s.license.body.clinic_name)} · ${licActive ? `valid ${daysLeft(s.license.body.exp)}d` : 'license expired'}</span>` : ''}
+      </div>
+      <span class="grow"></span>
+      ${s.session ? `
+        ${s.session.admin ? `
+          <div class="seg" role="tablist" aria-label="Workspace section">
+            <span class="seg-pill" aria-hidden="true"></span>
+            <button class="seg-btn" role="tab" aria-selected="${s.panel === 'patient'}" data-action="panel" data-panel="patient">Patients</button>
+            <button class="seg-btn" role="tab" aria-selected="${s.panel === 'admin'}" data-action="panel" data-panel="admin">Clinic admin</button>
+          </div>` : ''}
+        <span class="user-chip">
+          ${avatarHtml(s.session.staff.body.name, 'sm')}
+          <span class="who">${esc(by(s.session.staff))}</span>
+        </span>
+        <button class="btn btn-sm btn-ghost" data-action="sign-out">Sign out</button>
+      ` : ''}
     </header>
     ${body}
     ${s.pendingCheckIn ? viewCheckInConfirm(s.pendingCheckIn) : ''}`;
+
+  syncSegmentedPill(app.querySelector('.seg'));
+  const sheet = app.querySelector<HTMLElement>('.modal .card');
+  const backdrop = app.querySelector<HTMLElement>('.modal');
+  if (sheet && backdrop) {
+    modalDragCleanup = attachDragDismiss({
+      sheet,
+      backdrop,
+      onDismiss: () => {
+        st.pendingCheckIn = undefined;
+        render();
+      },
+    });
+  }
   focusOnViewChange();
 }
 
@@ -96,64 +210,222 @@ function focusOnViewChange() {
   app.querySelector<HTMLElement>('[data-autofocus]')?.focus();
 }
 
-const hero = '<img class="hero" src="/logo-mark.png" alt="" width="56" height="56" />';
+function authShell(cardHtml: string) {
+  return `<div class="auth-shell">
+    <aside class="auth-aside">
+      <div>
+        <span class="auth-pill">${ico.shield} Offline-first clinic workstation</span>
+        <h2 style="margin-top:16px">Clinical records that travel safely on the patient’s phone.</h2>
+        <p>Write consultations naturally in English or Taglish. patnub turns your approved summary into an encrypted QR code that opens only on that patient’s device.</p>
+      </div>
+      <ul class="guarantees">
+        <li>${ico.shield}<div><strong>Zero cloud dependency</strong><span>Records stay in this browser’s encrypted storage and work completely offline in the RHU.</span></div></li>
+        <li>${ico.qr}<div><strong>Locked to the patient’s phone</strong><span>Sealed with Ed25519 + X25519. Other phones cannot decrypt the QR code.</span></div></li>
+        <li>${ico.clock}<div><strong>Clinician always in control</strong><span>Nothing reaches a patient until you verify every medicine, instruction, and warning sign.</span></div></li>
+      </ul>
+    </aside>
+    <div class="card auth-card">${cardHtml}</div>
+  </div>`;
+}
+
+const hero = '<img class="hero" src="/logo-mark.png" alt="" width="48" height="48" />';
+
+function passwordInput(name: string, attrs = '') {
+  return `<div class="pw-wrap">
+    <input name="${name}" type="password" ${attrs}>
+    <button type="button" class="pw-eye" data-toggle-pw aria-label="Show passcode" title="Show or hide passcode">${ico.eye}</button>
+  </div>`;
+}
 
 function viewActivate() {
-  return `<section class="card narrow">
-    ${hero}<h2>Activate this clinic</h2>
-    <p>Choose the license file patnub sent to your clinic. This only needs to be done once on this device.</p>
-    <label class="btn btn-primary file">Choose license file<input type="file" accept=".json,application/json" data-change="license-file" hidden></label>
-    <details><summary>Restore from a backup instead</summary>${backupImportForm()}</details>
-  </section>`;
+  return authShell(`
+    ${hero}
+    <h2>Activate this clinic</h2>
+    <p class="muted">Drop or choose the signed license file patnub issued for your clinic. This only needs to be done once on this device.</p>
+    <label class="dropzone" data-drop="license">
+      ${ico.upload}
+      <b>Drop license.json here, or click to browse</b>
+      <span>Verified offline against the patnub root key</span>
+      <input type="file" accept=".json,application/json" data-change="license-file">
+    </label>
+    <details><summary>Restore from an encrypted backup instead</summary>${backupImportForm()}</details>
+  `);
 }
 
 function clinicianFields(prefix = '') {
   return `
-    <label>Full name<input name="name" required autocomplete="off" data-autofocus></label>
+    <label>Full name<input name="name" required autocomplete="off" placeholder="Dr. Maria Santos" data-autofocus></label>
     <div class="grid2">
       <label>Profession<input name="profession" placeholder="MD, RN, RM" required></label>
-      <label>PRC license no.<input name="license_no" required></label>
+      <label>PRC license no.<input name="license_no" placeholder="0123456" required></label>
     </div>
     <div class="grid2">
-      <label>${prefix}Passcode<input name="passcode" type="password" required minlength="6" autocomplete="new-password"></label>
-      <label>Repeat passcode<input name="confirm" type="password" required autocomplete="new-password"></label>
+      <label>${prefix}Passcode${passwordInput('passcode', 'required minlength="6" autocomplete="new-password"')}</label>
+      <label>Repeat passcode${passwordInput('confirm', 'required autocomplete="new-password"')}</label>
     </div>`;
 }
 
 function viewFirstAdmin() {
-  return `<form class="card narrow" data-form="first-admin">
-    ${hero}<h2>Create the first clinician account</h2>
-    <p>This account is also the clinic admin. It can add other clinicians and make backups.</p>
+  return authShell(`<form data-form="first-admin">
+    ${hero}
+    <h2>Create the first clinician</h2>
+    <p class="muted">This account is also the clinic admin for <b>${esc(st.license?.body.clinic_name ?? '')}</b>. It can add staff and export backups.</p>
     ${clinicianFields()}
-    <button class="btn btn-primary block" data-busy="Creating account…">Create account</button>
-  </form>`;
+    <div class="actions"><button class="btn btn-primary block" data-busy="Creating account…">Create account &amp; continue</button></div>
+  </form>`);
 }
 
 function viewSignIn() {
   const active = st.staff.filter((x) => !x.disabled);
-  return `<form class="card narrow" data-form="sign-in">
-    ${hero}<h2>Sign in</h2><p class="muted">${esc(st.license?.body.clinic_name ?? '')}</p>
-    ${st.lockedFrom ? '<p class="note">Signed out after 10 minutes without activity, to protect patient records on this shared device.</p>' : ''}
+  return authShell(`<form data-form="sign-in">
+    ${hero}
+    <h2>Sign in to ${esc(st.license?.body.clinic_name ?? 'Clinic')}</h2>
+    <p class="muted">Select your profile and enter your local passcode to unlock clinic records.</p>
+    ${st.lockedFrom ? '<p class="note">Signed out automatically after 10 minutes of inactivity to protect patient privacy on this shared device.</p>' : ''}
     <label>Clinician<select name="staff_id">${active.map((x) => `<option value="${esc(x.staff_id)}" ${x.staff_id === st.lockedFrom ? 'selected' : ''}>${esc(by(x))}</option>`).join('')}</select></label>
-    <label>Passcode<input name="passcode" type="password" required autocomplete="current-password" data-autofocus></label>
-    <button class="btn btn-primary block" data-busy="Signing in…">Sign in</button>
-  </form>`;
+    <label>Passcode${passwordInput('passcode', 'required autocomplete="current-password" data-autofocus')}</label>
+    <div class="actions"><button class="btn btn-primary block" data-busy="Unlocking…">Unlock workspace</button></div>
+  </form>`);
+}
+
+function countByPatient(records: ClinicRecord[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const r of records) {
+    if (r.status === 'ISSUED') map.set(r.patient_id, (map.get(r.patient_id) ?? 0) + 1);
+  }
+  return map;
 }
 
 function viewHome() {
-  return `<div class="layout">
-    <aside class="card side">
-      <button class="btn btn-primary block" data-action="scan">Check in patient</button>
-      ${DEBUG ? `<details class="paste"><summary>Paste a check-in code (debug)</summary>
-        <form data-form="paste-checkin"><textarea name="code" rows="3"></textarea><button class="btn btn-sm">Read code</button></form>
+  const counts = countByPatient(st.allRecords);
+  return `<div class="workspace">
+    <aside class="sidebar">
+      <button class="btn btn-primary block" data-action="scan">${ico.camera} Check in patient</button>
+      <div class="search-box">
+        ${ico.search}
+        <input type="search" placeholder="Find patient…" value="${esc(st.query)}" data-input="search" aria-label="Search patients">
+        <span class="kbd-hint" aria-hidden="true">/</span>
+        <button type="button" class="search-clear" data-action="clear-search" aria-label="Clear search">×</button>
+      </div>
+      <div class="side-head">
+        <span class="eyebrow">Patients</span>
+        <span class="count-badge">${st.patients.length}</span>
+      </div>
+      ${st.patients.length ? '' : '<p class="muted small" style="padding:4px 4px 0">No patients checked in yet. Ask a patient to open patnub › Scan, then click <b>Check in patient</b>.</p>'}
+      <ul class="patient-list" id="patients">${st.patients.map((p) => {
+        const n = counts.get(p.id) ?? 0;
+        return `<li data-name="${esc(p.name.toLowerCase())}" ${matches(p) ? '' : 'hidden'}>
+          <button class="pt-row ${st.selected?.id === p.id ? 'sel' : ''}" data-action="select" data-id="${esc(p.id)}" ${st.selected?.id === p.id ? 'aria-current="true"' : ''}>
+            ${avatarHtml(p.name, 'md')}
+            <span class="pt-meta">
+              <b>${esc(p.name)}</b>
+              <span>${esc(p.age)} yrs${p.brgy ? ` · ${esc(p.brgy)}` : ''}</span>
+            </span>
+            ${n > 0 ? `<span class="pt-count" title="${n} issued record(s)">${n}</span>` : ''}
+          </button>
+        </li>`;
+      }).join('')}</ul>
+      ${DEBUG ? `<details class="paste"><summary>Paste check-in code (debug)</summary>
+        <form data-form="paste-checkin"><textarea name="code" rows="3" placeholder="PATNUB:CI1:..."></textarea><button class="btn btn-sm block">Read code</button></form>
       </details>` : ''}
-      <h3>Patients on this device</h3>
-      ${st.patients.length > 5 ? `<input type="search" class="search" placeholder="Search by name" value="${esc(st.query)}" data-input="search" aria-label="Search patients">` : ''}
-      ${st.patients.length ? '' : '<p class="muted small">No patients yet. Ask the patient to open patnub › Scan, then press Check in patient.</p>'}
-      <ul class="list" id="patients">${st.patients.map((p) => `<li data-name="${esc(p.name.toLowerCase())}" ${matches(p) ? '' : 'hidden'}><button class="row ${st.selected?.id === p.id ? 'sel' : ''}" data-action="select" data-id="${esc(p.id)}" ${st.selected?.id === p.id ? 'aria-current="true"' : ''}><b>${esc(p.name)}</b><span>${esc(p.age)}${p.brgy ? ` · ${esc(p.brgy)}` : ''}</span></button></li>`).join('')}</ul>
     </aside>
-    <section>${st.panel === 'admin' ? viewAdmin() : st.selected ? viewPatient(st.selected) : `<div class="card empty"><img src="/logo-mark.png" alt="" width="48" height="48"><h2>Who are you seeing?</h2><p class="muted">Choose a patient on the left, or check in a new one by scanning the code on their phone.</p></div>`}</section>
+    <main class="canvas">${st.panel === 'admin' ? viewAdmin() : st.selected ? viewPatient(st.selected) : viewDashboard()}</main>
   </div>`;
+}
+
+function viewDashboard() {
+  const issued = st.allRecords.filter((r) => r.status === 'ISSUED');
+  const todayIso = today();
+  const todayCount = issued.filter((r) => r.copy.encounter_date === todayIso).length;
+  const validQrs = issued.filter((r) => qrValid(r)).length;
+  const licDays = st.license ? daysLeft(st.license.body.exp) : 0;
+  const latestByPatient = new Map<string, ClinicRecord>();
+  for (const r of issued) {
+    if (!latestByPatient.has(r.patient_id)) latestByPatient.set(r.patient_id, r);
+  }
+  const recentPatients = st.patients.slice(0, 5);
+
+  return `
+    <section class="dash-hero">
+      <div>
+        <span class="eyebrow">${esc(st.license?.body.clinic_name ?? 'Clinic')} · ${esc(fmtDay(todayIso))}</span>
+        <h2>${greeting()}, ${esc(st.session!.staff.body.name)}</h2>
+        <p>${st.patients.length ? 'Select a patient from the sidebar to review their chart, or check in a new patient via QR.' : 'Your workstation is ready. Scan a patient’s check-in QR from their phone to start their first record.'}</p>
+      </div>
+      <div class="dash-actions">
+        <button class="btn btn-primary" data-action="scan">${ico.camera} Check in patient</button>
+        ${st.patients[0] ? `<button class="btn btn-soft" data-action="select" data-id="${esc(st.patients[0].id)}">Open ${esc(st.patients[0].name)}</button>` : ''}
+      </div>
+    </section>
+
+    <section class="kpi-grid" aria-label="Clinic summary">
+      <div class="kpi">
+        <span class="eyebrow">Patients on device</span>
+        <span class="kpi-val">${st.patients.length}</span>
+        <span class="kpi-sub">${st.staff.filter((x) => !x.disabled).length} active clinician(s)</span>
+      </div>
+      <div class="kpi">
+        <span class="eyebrow">Issued today</span>
+        <span class="kpi-val">${todayCount}</span>
+        <span class="kpi-sub">${issued.length} total approved record(s)</span>
+      </div>
+      <div class="kpi">
+        <span class="eyebrow">Active QR codes</span>
+        <span class="kpi-val">${validQrs}</span>
+        <span class="kpi-sub">24-hour patient scan window</span>
+      </div>
+      <div class="kpi">
+        <span class="eyebrow">Clinic license</span>
+        <span class="kpi-val">${licDays}d</span>
+        <span class="kpi-sub">${st.license && licenseActive(st.license) ? `Valid until ${new Date(st.license.body.exp * 1000).toLocaleDateString()}` : 'Renewal needed'}</span>
+      </div>
+    </section>
+
+    <section class="dash-grid">
+      <div class="card">
+        <div class="card-header">
+          <h3>${recentPatients.length ? 'Recent patients' : 'How a visit works'}</h3>
+          ${recentPatients.length ? `<span class="xs muted">Click to open chart</span>` : ''}
+        </div>
+        ${recentPatients.length ? `
+          <ul class="quick-list">${recentPatients.map((p) => {
+            const last = latestByPatient.get(p.id);
+            return `<li><button class="quick-item" data-action="select" data-id="${esc(p.id)}">
+              ${avatarHtml(p.name, 'md')}
+              <span class="qi-main">
+                <b>${esc(p.name)}</b>
+                <span>${last ? `${esc(last.copy.assessment || 'Consultation')} · ${esc(fmtDay(last.copy.encounter_date))}` : `${esc(p.age)} yrs${p.brgy ? ` · ${esc(p.brgy)}` : ''} · No records yet`}</span>
+              </span>
+              ${last ? `<span class="tag ${qrValid(last) ? 'tag-ok' : ''}">${qrValid(last) ? 'QR ready' : `v${last.rv}`}</span>` : '<span class="tag">New</span>'}
+            </button></li>`;
+          }).join('')}</ul>
+        ` : `
+          <ol class="flow-steps">
+            <li><span class="step-num">1</span><div><b>Scan check-in QR</b><br><span class="small muted">Patient opens patnub › Scan on their phone. Camera pairs their public key in one second.</span></div></li>
+            <li><span class="step-num">2</span><div><b>Write note &amp; verify fields</b><br><span class="small muted">Type naturally in English or Taglish. Review extracted medicines, instructions, and red flags.</span></div></li>
+            <li><span class="step-num">3</span><div><b>Show encrypted QR</b><br><span class="small muted">Patient scans the QR back onto their phone—completely offline.</span></div></li>
+          </ol>
+        `}
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Recent activity</h3>
+          <span class="xs muted">Local audit log</span>
+        </div>
+        ${st.auditLog.length ? `
+          <ul class="audit-list">${st.auditLog.slice(0, 6).map((a) => `
+            <li class="audit-row">
+              <span><b>${esc(formatAuditAction(a.action))}</b>${a.details ? ` <span class="muted">· ${esc(a.details)}</span>` : ''}</span>
+              <time>${esc(fmtRelTime(a.at))}</time>
+            </li>`).join('')}</ul>
+        ` : '<p class="muted small">Activity will appear here as clinicians sign in, check in patients, and issue records.</p>'}
+      </div>
+    </section>`;
+}
+
+function formatAuditAction(action: string): string {
+  return action.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 const matches = (p: Patient) => !st.query || p.name.toLowerCase().includes(st.query.toLowerCase());
@@ -161,37 +433,106 @@ const matches = (p: Patient) => !st.query || p.name.toLowerCase().includes(st.qu
 function viewPatient(p: Patient) {
   const steps = ['Write note', 'Review draft', 'Share QR'];
   const idx = { history: -1, write: 0, review: 1, qr: 2 }[st.stage];
+  const issuedCount = st.records.filter((r) => r.status === 'ISSUED').length;
   return `<div class="card">
-    <div class="ptc"><div><h2>${esc(p.name)}</h2><p class="muted">${esc(p.age)} years${p.brgy ? ` · ${esc(p.brgy)}` : ''}</p></div>
-      ${st.stage === 'history' ? `<button class="btn btn-primary" data-action="new-consult" ${licenseActive(st.license!) ? '' : 'disabled'}>New consultation</button>` : '<button class="btn btn-sm" data-action="history">Back to history</button>'}</div>
+    <div class="pt-header">
+      <div class="pt-title">
+        ${avatarHtml(p.name, 'lg')}
+        <div>
+          <h2>${esc(p.name)}</h2>
+          <div class="pt-pills">
+            <span class="tag">${esc(p.age)} years</span>
+            ${p.brgy ? `<span class="tag">${esc(p.brgy)}</span>` : ''}
+            <span class="tag">${issuedCount} record${issuedCount === 1 ? '' : 's'}</span>
+          </div>
+        </div>
+      </div>
+      ${st.stage === 'history'
+        ? `<button class="btn btn-primary" data-action="new-consult" ${licenseActive(st.license!) ? '' : 'disabled'}>${ico.plus} New consultation</button>`
+        : `<button class="btn btn-sm" data-action="history">${ico.back} Back to chart</button>`}
+    </div>
     ${idx >= 0 ? `<ol class="steps">${steps.map((x, i) => `<li class="${i < idx ? 'done' : i === idx ? 'cur' : ''}">${x}</li>`).join('')}</ol>` : ''}
     ${st.stage === 'history' ? viewHistory() : st.stage === 'write' ? viewWrite() : st.stage === 'review' ? viewReview() : viewQr(st.shown!)}
   </div>`;
 }
 
 function viewHistory() {
-  if (!licenseActive(st.license!)) return '<p class="err">The clinic license has expired. Records stay readable, but new QR codes cannot be issued until it is renewed.</p>' + historyList();
-  return historyList();
+  const banner = !licenseActive(st.license!)
+    ? '<p class="err">The clinic license has expired. Past records stay readable, but new QR codes cannot be issued until it is renewed.</p>'
+    : '';
+  return banner + historyList();
 }
 
 function historyList() {
-  if (!st.records.length) return '<p class="muted">No records for this patient yet. Start a new consultation to write one.</p>';
-  return `<h3>Records</h3><ul class="list">${st.records.map((r) => `<li class="rec ${r.status === 'SUPERSEDED' ? 'old' : ''}">
-    <div class="rec-head"><b>${esc(r.copy.assessment || 'Consultation')}</b>
-      <span class="tag">${r.status === 'SUPERSEDED' ? 'Replaced' : qrValid(r) ? `QR valid ${timeLeft(r.copy.exp)}` : 'QR expired'}</span></div>
-    <div class="muted small">${esc(fmtDay(r.copy.encounter_date))} · version ${r.rv} · ${esc(by(st.staff.find((x) => x.staff_id === r.staff_id)))}</div>
-    ${r.status === 'ISSUED' ? `<div class="actions">
-      <button class="btn btn-sm" data-action="show-qr" data-key="${esc(r.key)}" data-busy="Preparing…">${qrValid(r) ? 'Show QR' : 'Make a new QR'}</button>
-      <button class="btn btn-sm" data-action="correct" data-key="${esc(r.key)}">Correct</button></div>` : ''}
-  </li>`).join('')}</ul>`;
+  if (!st.records.length) {
+    return `<div style="padding:28px 12px;text-align:center">
+      <h3>No consultations recorded yet</h3>
+      <p class="muted small" style="max-width:40ch;margin:6px auto 16px">Start a consultation to write a clinical note and issue an encrypted QR summary for ${esc(st.selected!.name)}.</p>
+      <button class="btn btn-primary" data-action="new-consult" ${licenseActive(st.license!) ? '' : 'disabled'}>${ico.plus} Start first consultation</button>
+    </div>`;
+  }
+  return `<ul class="rec-list">${st.records.map((r) => {
+    const valid = r.status === 'ISSUED' && qrValid(r);
+    const badgeClass = r.status === 'SUPERSEDED' ? '' : valid ? 'tag-ok' : 'tag-warn';
+    const badgeText = r.status === 'SUPERSEDED' ? 'Replaced' : valid ? `QR valid · ${timeLeft(r.copy.exp)}` : 'QR expired';
+    return `<li class="rec ${r.status === 'SUPERSEDED' ? 'old' : ''}">
+      <div class="rec-head">
+        <div>
+          <b>${esc(r.copy.assessment || 'Consultation')}</b>
+          <div class="rec-sub">${esc(fmtDay(r.copy.encounter_date))} · v${r.rv} · ${esc(by(st.staff.find((x) => x.staff_id === r.staff_id)))}</div>
+        </div>
+        <span class="tag ${badgeClass}">${badgeText}</span>
+      </div>
+      <div class="rec-body">
+        ${r.copy.meds.length ? `<div class="chip-row">${r.copy.meds.map((m) => `<span class="med-chip">${esc(m.name)}${m.dose ? ` ${esc(m.dose)}` : ''}${m.freq ? ` · ${esc(m.freq)}` : ''}</span>`).join('')}</div>` : ''}
+        ${r.copy.instructions.length ? `<ul class="rec-lines">${r.copy.instructions.map((ins) => `<li>${esc(ins)}</li>`).join('')}</ul>` : ''}
+        ${r.copy.warnings.length ? `<div class="chip-row">${r.copy.warnings.map((w) => `<span class="warn-chip">Seek care: ${esc(w)}</span>`).join('')}</div>` : ''}
+        ${r.copy.follow_up ? `<div class="small muted"><b>Follow-up:</b> ${esc(r.copy.follow_up)}</div>` : ''}
+      </div>
+      ${r.status === 'ISSUED' ? `<div class="rec-foot">
+        <span class="xs muted">Encrypted to patient’s current phone</span>
+        <div class="actions" style="margin-top:0">
+          <button class="btn btn-sm btn-soft" data-action="show-qr" data-key="${esc(r.key)}" data-busy="Preparing…">${ico.qr} ${valid ? 'Show QR' : 'Make new QR'}</button>
+          <button class="btn btn-sm" data-action="correct" data-key="${esc(r.key)}">Correct</button>
+        </div>
+      </div>` : ''}
+    </li>`;
+  }).join('')}</ul>`;
+}
+
+function renderDraftPreview(d: Draft): string {
+  const empty = !d.assessment && !d.meds.length && !d.instructions.length && !d.warnings.length && !d.follow_up;
+  if (empty) {
+    return `<span class="eyebrow">Live field preview</span>
+      <p class="muted small" style="margin:0">Start typing your clinical note on the left—or tap a quick template—to preview the structured fields patnub will draft for review.</p>`;
+  }
+  return `<span class="eyebrow">Live field preview</span>
+    <div class="preview-field"><span class="xs muted">Assessment</span><strong>${esc(d.assessment || '—')}</strong></div>
+    <div class="preview-field"><span class="xs muted">Medicines (${d.meds.length})</span>
+      ${d.meds.length ? `<div class="chip-row">${d.meds.map((m) => `<span class="med-chip">${esc(m.name)} ${esc(m.dose)}</span>`).join('')}</div>` : '<span class="small muted">None detected yet</span>'}
+    </div>
+    <div class="preview-field"><span class="xs muted">Instructions (${d.instructions.length})</span>
+      ${d.instructions.length ? `<ul class="rec-lines">${d.instructions.slice(0, 4).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '<span class="small muted">—</span>'}
+    </div>
+    <div class="preview-field"><span class="xs muted">Emergency signs (${d.warnings.length})</span>
+      ${d.warnings.length ? `<div class="chip-row">${d.warnings.map((w) => `<span class="warn-chip">${esc(w)}</span>`).join('')}</div>` : '<span class="small muted">—</span>'}
+    </div>
+    <div class="preview-field"><span class="xs muted">Follow-up</span><strong>${esc(d.follow_up || '—')}</strong></div>`;
 }
 
 function viewWrite() {
-  return `<form data-form="write">
-    <p>Write the way you normally would, in English or Taglish. patnub drafts the structured fields for you to check; nothing reaches the patient until you approve it.</p>
-    <textarea name="note" rows="12" required data-autofocus data-input="note" placeholder="e.g. BP 150/95. Assessment: Stage 1 hypertension. Start Amlodipine 5 mg once daily…">${esc(st.note)}</textarea>
-    <p class="muted small">The full note stays on this device. The patient only receives the fields you approve.</p>
-    <div class="actions"><button class="btn btn-primary">Draft fields</button></div>
+  const initialDraft = draftFromNote(st.note);
+  return `<form data-form="write" class="write-split">
+    <div>
+      <p class="muted small">Write naturally in English or Taglish. Your raw note stays on this device; the patient only receives the fields you approve in the next step.</p>
+      <div class="tpl-row">
+        <span class="xs muted" style="font-weight:650">Templates:</span>
+        ${TEMPLATES.map((t, i) => `<button type="button" class="tpl-chip" data-action="template" data-tpl="${i}">${esc(t.label)}</button>`).join('')}
+      </div>
+      <textarea name="note" rows="13" required data-autofocus data-input="note" placeholder="e.g. BP 150/95. Assessment: Stage 1 hypertension. Start Amlodipine 5 mg once daily in the morning…">${esc(st.note)}</textarea>
+      <div class="actions"><button class="btn btn-primary">Review structured fields →</button></div>
+    </div>
+    <aside class="preview-card" id="live-draft-preview">${renderDraftPreview(initialDraft)}</aside>
   </form>`;
 }
 
@@ -202,83 +543,143 @@ function medRow(m: { name: string; dose: string; freq: string }) {
 function viewReview() {
   const d = st.draft!;
   return `<form data-form="approve" class="review">
-    <aside class="source"><h3>Your note</h3><p>${esc(st.note)}</p><button type="button" class="btn btn-sm" data-action="back-write">Edit note</button></aside>
+    <aside class="source">
+      <span class="eyebrow">Verbatim note (stays local)</span>
+      <p>${esc(st.note)}</p>
+      <button type="button" class="btn btn-sm" data-action="back-write">${ico.back} Edit note</button>
+    </aside>
     <div class="fields">
-    <p class="banner">Drafted from your note by simple rules, not by a doctor. Check every field: the patient’s assistant will treat this as your instruction.</p>
-    <div class="grid2"><label>Encounter date<input type="date" name="encounter_date" value="${esc(st.encounterDate)}" required></label>
-      <label>Assessment<input name="assessment" value="${esc(d.assessment)}" data-autofocus></label></div>
-    <fieldset><legend>Medicines</legend><div id="meds">${d.meds.map(medRow).join('')}</div>
-      <button type="button" class="btn btn-sm" data-action="add-med">Add medicine</button></fieldset>
-    <div class="grid2">
-      <label>Instructions · one per line<textarea name="instructions" rows="5">${esc(d.instructions.join('\n'))}</textarea></label>
-      <label>Emergency warning signs · one per line<textarea name="warnings" rows="5">${esc(d.warnings.join('\n'))}</textarea></label>
-    </div>
-    <label>Follow-up<input name="follow_up" value="${esc(d.follow_up)}"></label>
+      <div class="banner">${ico.shield}<span>Drafted from your note by simple rules. Verify every field before signing—the patient’s assistant treats this as your instruction.</span></div>
+      <div class="grid2">
+        <label>Encounter date<input type="date" name="encounter_date" value="${esc(st.encounterDate)}" required></label>
+        <label>Assessment<input name="assessment" value="${esc(d.assessment)}" data-autofocus></label>
+      </div>
+      <fieldset>
+        <legend>Medicines</legend>
+        <div id="meds">${d.meds.map(medRow).join('')}</div>
+        <button type="button" class="btn btn-sm btn-soft" data-action="add-med">${ico.plus} Add medicine</button>
+      </fieldset>
+      <div class="grid2">
+        <label>Instructions · one per line<textarea name="instructions" rows="5">${esc(d.instructions.join('\n'))}</textarea></label>
+        <label>Emergency warning signs · one per line<textarea name="warnings" rows="5">${esc(d.warnings.join('\n'))}</textarea></label>
+      </div>
+      <label>Follow-up<input name="follow_up" value="${esc(d.follow_up)}" placeholder="e.g. Return in 4 weeks"></label>
     </div>
     <div class="approve-bar">
       <label class="check"><input type="checkbox" name="ok" required> I reviewed this summary and it matches my assessment</label>
-      <button class="btn btn-primary" data-busy="Creating QR…">Approve and create QR</button>
+      <button class="btn btn-primary" data-busy="Signing &amp; sealing QR…">${ico.qr} Approve &amp; create QR</button>
     </div>
   </form>`;
 }
 
 function viewQr(r: ClinicRecord) {
   return `<div class="qr-wrap">
-    <div class="qr">${qrSvg(r.qr)}</div>
+    <div class="qr-card" data-action="present" role="button" tabindex="0" aria-label="Show QR code full screen">${qrSvg(r.qr)}</div>
     <div>
-      <h3>Ready for ${esc(st.selected!.name)}</h3>
-      <p>Ask the patient to open patnub on their phone, go to <b>Scan</b>, and scan this code. It works without internet.</p>
+      <span class="tag tag-ok">Signed &amp; encrypted</span>
+      <h3 style="margin-top:8px;font-size:1.3125rem">Ready for ${esc(st.selected!.name)}</h3>
+      <p class="muted">Ask the patient to open <b>patnub › Scan › Scan a record</b> and point their phone at this code. Works without internet.</p>
       <ul class="facts">
-        <li>Only ${esc(st.selected!.name)}’s phone can open it.</li>
-        <li>Valid for <b data-countdown="${r.copy.exp}">${timeLeft(r.copy.exp) ?? 'expired'}</b>, until ${esc(fmtDate(r.copy.exp))}.</li>
-        <li>Version ${r.rv}, signed by ${esc(by(st.session!.staff))}.</li>
+        <li>${ico.shield}<span>Locked to <b>${esc(st.selected!.name)}</b>’s phone key only</span></li>
+        <li>${ico.clock}<span>Valid for <b data-countdown="${r.copy.exp}">${timeLeft(r.copy.exp) ?? 'expired'}</b> (until ${esc(fmtDate(r.copy.exp))})</span></li>
+        <li>${ico.qr}<span>Record <b>v${r.rv}</b> · signed by ${esc(by(st.session!.staff))}</span></li>
       </ul>
-      <div class="actions start"><button class="btn btn-primary" data-action="present">Show full screen</button>
-      <button class="btn" data-action="history">Done</button></div>
+      <div class="actions start">
+        <button class="btn btn-primary" data-action="present">${ico.expand} Present full screen</button>
+        <button class="btn" data-action="history">Done</button>
+      </div>
     </div>
   </div>`;
 }
 
 function viewCheckInConfirm(c: CheckInResult) {
   const p = c.kind === 'new-phone' ? c.candidate : c.patient;
-  const text = c.kind === 'known' ? `${esc(p.name)} is already on this device.`
-    : c.kind === 'new' ? `Add ${esc(p.name)}, ${esc(p.age)}${p.brgy ? `, ${esc(p.brgy)}` : ''}?`
-    : `${esc(p.name)} looks like ${esc(c.existing.name)} (${esc(c.existing.age)}${c.existing.brgy ? `, ${esc(c.existing.brgy)}` : ''}) on a new phone. Confirm it is the same person before you continue: records you send will only open on the new phone.`;
-  return `<div class="modal" role="dialog" aria-modal="true" aria-label="Check-in"><div class="card">
-    <h3>Check-in</h3><p>${text}</p>
-    <div class="actions">
-      <button class="btn" data-action="checkin-cancel">Cancel</button>
-      ${c.kind === 'new-phone' ? '<button class="btn" data-action="checkin-separate">Different person</button>' : ''}
-      <button class="btn btn-primary" data-action="checkin-ok" data-autofocus>${c.kind === 'known' ? 'Open' : c.kind === 'new' ? 'Add patient' : 'Same person, new phone'}</button>
-    </div></div></div>`;
+  const text = c.kind === 'known'
+    ? `<b>${esc(p.name)}</b> is already registered on this device.`
+    : c.kind === 'new'
+    ? `Add <b>${esc(p.name)}</b>, ${esc(p.age)} yrs${p.brgy ? ` from ${esc(p.brgy)}` : ''}?`
+    : `<b>${esc(p.name)}</b> matches ${esc(c.existing.name)} (${esc(c.existing.age)} yrs${c.existing.brgy ? `, ${esc(c.existing.brgy)}` : ''}) on a new phone. Confirm it is the same person: new QR codes will only open on this new phone.`;
+  return `<div class="modal" role="dialog" aria-modal="true" aria-label="Check-in">
+    <div class="card">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <h3>Patient check-in</h3>
+      <p>${text}</p>
+      <div class="actions">
+        <button class="btn" data-action="checkin-cancel">Cancel</button>
+        ${c.kind === 'new-phone' ? '<button class="btn" data-action="checkin-separate">Different person</button>' : ''}
+        <button class="btn btn-primary" data-action="checkin-ok" data-autofocus>${c.kind === 'known' ? 'Open chart' : c.kind === 'new' ? 'Add patient' : 'Same person, new phone'}</button>
+      </div>
+    </div>
+  </div>`;
 }
 
 function viewAdmin() {
-  return `<div class="card">
-    <h2>Clinicians</h2>
-    <ul class="list">${st.staff.map((x) => `<li class="rec"><div><b>${esc(by(x))}</b> <span class="muted">· PRC ${esc(x.body.license_no)}${x.is_admin ? ' · admin' : ''}${x.disabled ? ' · disabled' : ''}</span></div>
-      ${x.staff_id === st.session!.staff.staff_id ? '' : `<button class="btn btn-sm" data-action="toggle-staff" data-id="${esc(x.staff_id)}">${x.disabled ? 'Enable' : 'Disable'}</button>`}</li>`).join('')}</ul>
-    <form data-form="add-clinician"><h3>Add clinician</h3>${clinicianFields()}
-      <label class="check"><input type="checkbox" name="is_admin"> Also clinic admin</label>
-      <button class="btn btn-primary" data-busy="Adding…">Add clinician</button></form>
-  </div>
-  <div class="card">
-    <h2>Backup</h2>
-    <p>Everything lives only in this browser. Save an encrypted backup to a USB stick regularly. It is locked with your passcode.</p>
-    <form data-form="export"><label>Your passcode<input name="passcode" type="password" required></label><button class="btn btn-primary" data-busy="Preparing backup…">Download backup</button></form>
-    <details><summary>Restore a backup (replaces everything on this device)</summary>${backupImportForm()}</details>
-  </div>
-  <div class="card">
-    <h2>Erase this device</h2>
-    <p>Deletes the license, clinicians, patients and records from this browser. Use it to reset between demos. Make a backup first if you need the data.</p>
-    <button class="btn danger" data-action="erase">Erase everything</button>
+  return `<div class="admin-grid">
+    <div class="card">
+      <div class="card-header">
+        <h2>Clinicians</h2>
+        <span class="count-badge">${st.staff.length}</span>
+      </div>
+      <ul class="rec-list" style="margin-bottom:18px">${st.staff.map((x) => `<li class="rec" style="padding:12px 14px">
+        <div class="rec-head" style="align-items:center">
+          <div style="display:flex;align-items:center;gap:10px">
+            ${avatarHtml(x.body.name, 'md')}
+            <div>
+              <b>${esc(by(x))}</b>
+              <div class="rec-sub">PRC ${esc(x.body.license_no)}${x.is_admin ? ' · Admin' : ''}${x.disabled ? ' · Disabled' : ''}</div>
+            </div>
+          </div>
+          ${x.staff_id === st.session!.staff.staff_id
+            ? '<span class="tag tag-ok">You</span>'
+            : `<button class="btn btn-sm" data-action="toggle-staff" data-id="${esc(x.staff_id)}">${x.disabled ? 'Enable' : 'Disable'}</button>`}
+        </div>
+      </li>`).join('')}</ul>
+      <form data-form="add-clinician">
+        <h3>Add clinician</h3>
+        ${clinicianFields()}
+        <label class="check" style="margin:10px 0 14px"><input type="checkbox" name="is_admin"> Also clinic admin</label>
+        <button class="btn btn-primary" data-busy="Adding…">${ico.plus} Add clinician</button>
+      </form>
+    </div>
+
+    <div class="admin-stack">
+      <div class="card">
+        <h2>Encrypted backup</h2>
+        <p class="muted small">Everything lives only in this browser. Export an AES-GCM encrypted backup to a USB drive regularly.</p>
+        <form data-form="export">
+          <label>Your passcode${passwordInput('passcode', 'required')}</label>
+          <button class="btn btn-primary" data-busy="Preparing backup…">${ico.upload} Download backup</button>
+        </form>
+        <details><summary>Restore from backup (replaces data on this device)</summary>${backupImportForm()}</details>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Recent audit log</h3>
+          <span class="xs muted">${st.auditLog.length} latest</span>
+        </div>
+        ${st.auditLog.length ? `<ul class="audit-list">${st.auditLog.slice(0, 6).map((a) => `
+          <li class="audit-row">
+            <span><b>${esc(formatAuditAction(a.action))}</b>${a.details ? ` <span class="muted">· ${esc(a.details)}</span>` : ''}</span>
+            <time>${esc(fmtRelTime(a.at))}</time>
+          </li>`).join('')}</ul>` : '<p class="muted small">No events yet.</p>'}
+      </div>
+
+      <div class="card">
+        <h3>Reset device</h3>
+        <p class="muted small">Deletes the license, clinicians, patients, and records from this browser. Export a backup first if needed.</p>
+        <button class="btn danger" data-action="erase">Erase everything</button>
+      </div>
+    </div>
   </div>`;
 }
 
 function backupImportForm() {
-  return `<form data-form="import"><label>Backup file<input name="file" type="file" accept=".json" required></label>
-    <label>Passcode it was saved with<input name="passcode" type="password" required></label>
-    <button class="btn" data-busy="Restoring…">Restore</button></form>`;
+  return `<form data-form="import" style="margin-top:10px">
+    <label>Backup file<input name="file" type="file" accept=".json" required></label>
+    <label>Passcode it was saved with${passwordInput('passcode', 'required')}</label>
+    <button class="btn" data-busy="Restoring…">Restore backup</button>
+  </form>`;
 }
 
 // ---------- actions ----------
@@ -287,6 +688,8 @@ async function refresh() {
   st.license = await getLicense();
   st.staff = await listStaff();
   st.patients = await listPatients();
+  st.allRecords = await listAllRecords();
+  st.auditLog = await listAudit(12);
   st.loaded = true;
   if (st.selected) {
     st.selected = st.patients.find((p) => p.id === st.selected!.id);
@@ -295,14 +698,9 @@ async function refresh() {
   render();
 }
 
-/**
- * Runs an action. While it runs, [btn] is disabled and shows its data-busy label. On success the
- * screen re-renders and [done] shows as a toast; on error only a toast shows, so whatever the
- * clinician typed stays in the form.
- */
 async function run(fn: () => Promise<void>, btn?: HTMLElement | null, done?: string) {
   const b = btn instanceof HTMLButtonElement ? btn : null;
-  const label = b?.textContent;
+  const label = b?.innerHTML;
   if (b) {
     b.disabled = true;
     if (b.dataset.busy) b.textContent = b.dataset.busy;
@@ -315,7 +713,7 @@ async function run(fn: () => Promise<void>, btn?: HTMLElement | null, done?: str
     toast(e instanceof Error ? e.message : String(e), 'error');
     if (b?.isConnected) {
       b.disabled = false;
-      b.textContent = label ?? '';
+      b.innerHTML = label ?? '';
     }
   }
 }
@@ -334,13 +732,12 @@ function toast(text: string, kind: 'ok' | 'error' = 'ok') {
   setTimeout(() => {
     t.classList.add('leaving');
     t.addEventListener('transitionend', () => t.remove(), { once: true });
-    setTimeout(() => t.remove(), 400); // reduced motion: no transition fires
+    setTimeout(() => t.remove(), 400);
   }, kind === 'error' ? 6000 : 3000);
 }
 
-// ---------- guards ----------
+// ---------- guards & form helpers ----------
 
-/** True while a consultation has unsaved text. */
 const dirty = () => (st.stage === 'write' || st.stage === 'review') && st.note.trim() !== '';
 const leaveOk = () => !dirty() || confirm('Discard this unfinished consultation?');
 
@@ -400,7 +797,7 @@ app.addEventListener('submit', (ev) => {
     case 'sign-in': return run(async () => {
       const s = await signIn(f('staff_id'), f('passcode'));
       if (!s) throw new Error('Wrong passcode. Try again.');
-      if (st.lockedFrom !== s.staff.staff_id) { st.selected = undefined; clearConsult(); } // never show someone else's draft
+      if (st.lockedFrom !== s.staff.staff_id) { st.selected = undefined; clearConsult(); }
       st.lockedFrom = undefined;
       st.session = s;
       touch();
@@ -410,7 +807,6 @@ app.addEventListener('submit', (ev) => {
       st.note = f('note');
       st.draft = draftFromNote(st.note);
       if (st.previous) {
-        // Correcting: start from what was approved before, not a fresh rule-based draft.
         const { assessment, meds, instructions, warnings, follow_up } = st.previous.copy;
         st.draft = { assessment, meds, instructions, warnings, follow_up };
       }
@@ -444,15 +840,23 @@ app.addEventListener('submit', (ev) => {
   }
 });
 
+function filterPatients(q: string) {
+  st.query = q;
+  st.patients.forEach((p) => {
+    const li = app.querySelector<HTMLElement>(`#patients li[data-name="${CSS.escape(p.name.toLowerCase())}"]`);
+    if (li) li.hidden = !matches(p);
+  });
+}
+
 app.addEventListener('input', (ev) => {
   const el = ev.target as HTMLInputElement;
-  if (el.dataset.input === 'note') st.note = el.value; // survives re-renders and feeds the dirty check
+  if (el.dataset.input === 'note') {
+    st.note = el.value;
+    const preview = app.querySelector<HTMLElement>('#live-draft-preview');
+    if (preview) preview.innerHTML = renderDraftPreview(draftFromNote(st.note));
+  }
   if (el.dataset.input === 'search') {
-    st.query = el.value;
-    st.patients.forEach((p) => {
-      const li = app.querySelector<HTMLElement>(`#patients li[data-name="${CSS.escape(p.name.toLowerCase())}"]`);
-      if (li) li.hidden = !matches(p);
-    });
+    filterPatients(el.value);
   }
 });
 
@@ -463,7 +867,36 @@ app.addEventListener('change', (ev) => {
   void run(async () => { st.pendingAdmin = (await activateLicense(await file.text())).admin; }, null, 'License activated.');
 });
 
+// Drag-and-drop license file support
+app.addEventListener('dragover', (ev) => {
+  const dz = (ev.target as HTMLElement).closest<HTMLElement>('[data-drop]');
+  if (!dz) return;
+  ev.preventDefault();
+  dz.classList.add('over');
+});
+app.addEventListener('dragleave', (ev) => {
+  const dz = (ev.target as HTMLElement).closest<HTMLElement>('[data-drop]');
+  if (dz) dz.classList.remove('over');
+});
+app.addEventListener('drop', (ev) => {
+  const dz = (ev.target as HTMLElement).closest<HTMLElement>('[data-drop]');
+  if (!dz) return;
+  ev.preventDefault();
+  dz.classList.remove('over');
+  const file = ev.dataTransfer?.files?.[0];
+  if (file && dz.dataset.drop === 'license') {
+    void run(async () => { st.pendingAdmin = (await activateLicense(await file.text())).admin; }, null, 'License activated.');
+  }
+});
+
 app.addEventListener('click', (ev) => {
+  const pwBtn = (ev.target as HTMLElement).closest<HTMLElement>('[data-toggle-pw]');
+  if (pwBtn) {
+    const inp = pwBtn.parentElement?.querySelector('input');
+    if (inp) inp.type = inp.type === 'password' ? 'text' : 'password';
+    return;
+  }
+
   const el = (ev.target as HTMLElement).closest<HTMLElement>('[data-action]');
   if (!el) return;
   const a = el.dataset.action;
@@ -479,6 +912,25 @@ app.addEventListener('click', (ev) => {
       if (el.dataset.id !== st.selected?.id && !leaveOk()) return;
       if (el.dataset.id !== st.selected?.id) clearConsult();
       st.selected = st.patients.find((p) => p.id === el.dataset.id); st.panel = 'patient'; return void refresh();
+    case 'clear-search': {
+      st.query = '';
+      render();
+      app.querySelector<HTMLInputElement>('input[data-input="search"]')?.focus();
+      return;
+    }
+    case 'template': {
+      const idx = Number(el.dataset.tpl);
+      const tpl = TEMPLATES[idx];
+      const ta = app.querySelector<HTMLTextAreaElement>('textarea[name="note"]');
+      if (tpl && ta) {
+        ta.value = tpl.note;
+        st.note = tpl.note;
+        const preview = app.querySelector<HTMLElement>('#live-draft-preview');
+        if (preview) preview.innerHTML = renderDraftPreview(draftFromNote(st.note));
+        ta.focus();
+      }
+      return;
+    }
     case 'history':
       if (st.stage !== 'qr' && !leaveOk()) return;
       clearConsult(); return render();
@@ -513,21 +965,29 @@ app.addEventListener('click', (ev) => {
       const kind = st.pendingCheckIn!.kind;
       const msg = kind === 'known' ? undefined : kind === 'new' ? 'Patient added.' : 'New phone saved. Make new QRs for past records from their history.';
       return void run(async () => {
-      const c = st.pendingCheckIn!;
-      st.pendingCheckIn = undefined;
-      let p: Patient;
-      if (c.kind === 'known') p = c.patient;
-      else if (c.kind === 'new') await savePatient((p = c.patient), actor());
-      else await savePatient((p = { ...c.existing, pub: c.candidate.pub }), actor(), 'PATIENT_NEW_PHONE');
-      st.selected = p;
-      st.panel = 'patient';
-      clearConsult();
-    }, el, msg);
+        const c = st.pendingCheckIn!;
+        st.pendingCheckIn = undefined;
+        let p: Patient;
+        if (c.kind === 'known') p = c.patient;
+        else if (c.kind === 'new') await savePatient((p = c.patient), actor());
+        else await savePatient((p = { ...c.existing, pub: c.candidate.pub }), actor(), 'PATIENT_NEW_PHONE');
+        st.selected = p;
+        st.panel = 'patient';
+        clearConsult();
+      }, el, msg);
     }
   }
 });
 
-// ---------- camera check-in ----------
+// Keyboard activation on the clickable QR card
+app.addEventListener('keydown', (ev) => {
+  if ((ev.key === 'Enter' || ev.key === ' ') && (ev.target as HTMLElement).classList.contains('qr-card')) {
+    ev.preventDefault();
+    if (st.shown) present(st.shown);
+  }
+});
+
+// ---------- camera check-in (drag-to-dismiss sheet) ----------
 
 async function startScan() {
   let stream: MediaStream;
@@ -541,10 +1001,13 @@ async function startScan() {
   modal.setAttribute('role', 'dialog');
   modal.setAttribute('aria-modal', 'true');
   modal.setAttribute('aria-label', 'Scan check-in code');
-  modal.innerHTML = `<div class="card"><h3>Scan the patient’s check-in code</h3>
+  modal.innerHTML = `<div class="card">
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <h3>Scan the patient’s check-in code</h3>
     <div class="viewfinder"><video playsinline muted></video><span></span></div>
-    <p class="muted small">On the patient’s phone: patnub › Scan. Hold it about 20 cm from the camera.</p>
-    <div class="actions"><button class="btn" data-stop>Cancel</button></div></div>`;
+    <p class="muted small">On the patient’s phone: <b>patnub › Scan</b>. Hold it about 20 cm from the camera.</p>
+    <div class="actions"><button class="btn" data-stop>Cancel</button></div>
+  </div>`;
   document.body.append(modal);
   const video = modal.querySelector('video')!;
   video.srcObject = stream;
@@ -552,13 +1015,18 @@ async function startScan() {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   let stopped = false;
+  let cleanupDrag = () => {};
   const stop = () => {
+    if (stopped) return;
     stopped = true;
+    cleanupDrag();
     stream.getTracks().forEach((t) => t.stop());
     modal.remove();
+    document.removeEventListener('keydown', onKey);
   };
+  cleanupDrag = attachDragDismiss({ sheet: modal.querySelector<HTMLElement>('.card')!, backdrop: modal, onDismiss: stop });
   modal.querySelector('[data-stop]')!.addEventListener('click', stop);
-  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { stop(); document.removeEventListener('keydown', onKey); } };
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') stop(); };
   document.addEventListener('keydown', onKey);
 
   const tick = () => {
@@ -579,7 +1047,7 @@ async function startScan() {
   tick();
 }
 
-// ---------- full-screen QR for the patient ----------
+// ---------- full-screen QR for the patient (drag or tap to dismiss) ----------
 
 function present(r: ClinicRecord) {
   const prev = document.activeElement as HTMLElement | null;
@@ -589,22 +1057,49 @@ function present(r: ClinicRecord) {
   el.setAttribute('aria-modal', 'true');
   el.setAttribute('aria-label', 'QR code for the patient');
   el.tabIndex = -1;
-  el.innerHTML = `<div class="qr">${qrSvg(r.qr)}</div>
+  el.innerHTML = `<div class="present-inner">
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <div class="qr">${qrSvg(r.qr)}</div>
     <p><b>${esc(st.selected?.name ?? '')}</b> · patnub › Scan › Scan a record</p>
-    <p class="muted">Tap anywhere or press Esc to close</p>`;
-  const close = () => { el.remove(); document.removeEventListener('keydown', onKey); prev?.focus(); };
+    <p class="muted small">Tap, drag down, or press Esc to close</p>
+  </div>`;
+  let closed = false;
+  let cleanupDrag = () => {};
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    cleanupDrag();
+    el.remove();
+    document.removeEventListener('keydown', onKey);
+    prev?.focus();
+  };
   const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
-  el.addEventListener('click', close);
+  el.addEventListener('click', () => {
+    if (el.querySelector('.present-inner')?.hasAttribute('data-just-dragged')) return;
+    close();
+  });
   document.addEventListener('keydown', onKey);
   document.body.append(el);
+  cleanupDrag = attachDragDismiss({ sheet: el.querySelector<HTMLElement>('.present-inner')!, backdrop: el, onDismiss: close });
   el.focus();
 }
 
-// Esc dismisses the check-in confirmation.
+// Esc dismisses check-in confirm; `/` focuses patient search.
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && st.pendingCheckIn) {
     st.pendingCheckIn = undefined;
     render();
+    return;
+  }
+  if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    const tag = (document.activeElement as HTMLElement | null)?.tagName;
+    if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+      const search = app.querySelector<HTMLInputElement>('input[data-input="search"]');
+      if (search) {
+        e.preventDefault();
+        search.focus();
+      }
+    }
   }
 });
 
@@ -631,7 +1126,6 @@ window.addEventListener('offline', render);
 render();
 void refresh();
 
-// Dev server skips the service worker so edits are never served from a stale cache.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js');
 }

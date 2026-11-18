@@ -7,7 +7,7 @@ import rootPubText from '../../contract/demo/root_pub.txt?raw';
 import type { Draft } from './draft.ts';
 import { patientCopy, RECORD_TTL_S } from './issue.ts';
 import { MIN_PASSCODE, unwrapSecret, wrapSecret } from './passcode.ts';
-import { all, audit, byPatient, dumpAll, get, put, restoreAll, type ClinicRecord, type License, type Patient, type Staff } from './store.ts';
+import { all, audit, byPatient, dumpAll, get, put, restoreAll, type AuditEvent, type ClinicRecord, type License, type Patient, type Staff } from './store.ts';
 
 const ROOT_PUB = unb64u(rootPubText.trim());
 const now = () => Math.floor(Date.now() / 1000);
@@ -147,6 +147,8 @@ export async function savePatient(p: Patient, actor: string, action = 'PATIENT_C
 
 export const listPatients = async () => (await all<Patient>('patients')).sort((a, b) => b.created_at - a.created_at);
 export const recordsFor = async (patientId: string) => (await byPatient(patientId)).sort((a, b) => b.created_at - a.created_at);
+export const listAllRecords = async () => (await all<ClinicRecord>('records')).sort((a, b) => b.created_at - a.created_at);
+export const listAudit = async (limit = 12) => (await all<AuditEvent>('audit')).sort((a, b) => b.at - a.at).slice(0, limit);
 
 // ---------- issuing ----------
 
