@@ -27,7 +27,8 @@ class BundledContentTest {
     @Test fun everyPassageHasASourceAndIsPendingReview() {
         assertTrue(Bundled.knowledge.size > 50)
         Bundled.knowledge.forEach {
-            assertTrue(it.sourceUrl!!.startsWith("https://medlineplus.gov/"))
+            // MedlinePlus summaries, plus curated FDA label excerpts for topics MedlinePlus lacks.
+            assertTrue(it.sourceUrl, it.sourceUrl!!.startsWith("https://medlineplus.gov/") || it.sourceUrl!!.startsWith("https://dailymed.nlm.nih.gov/"))
             assertTrue(it.reviewedBy == null) // nobody has signed off yet; flip this when REVIEW.md is done
         }
     }
@@ -50,5 +51,37 @@ class KeywordRankerScopeTest {
     @Test fun oneWordTopicStillMatches() {
         assertTrue(KeywordRanker.rank("dengue", chunks).first().chunk.topic == "dengue")
         assertTrue(KeywordRanker.rank("may lagnat ako, fever since yesterday", chunks).any { it.chunk.topic == "fever" })
+    }
+}
+
+class KeywordRankerChiliTest {
+    private val chunks = Bundled.knowledge
+    private fun topics(q: String) = KeywordRanker.rank(q, chunks).map { it.chunk.topic }
+
+    @Test fun chiliOnFingers_findsCapsaicin_notWarts() {
+        val t = topics("my fingers hurt after removing some seeds on chili")
+        assertTrue(t.toString(), t.firstOrNull() == "capsaicin pepper sili")
+        assertTrue(t.toString(), "warts" !in t)
+    }
+
+    @Test fun tagalogSili_findsCapsaicin() {
+        assertTrue(topics("mahapdi kamay ko dahil sa siling labuyo").firstOrNull() == "capsaicin pepper sili")
+    }
+
+    @Test fun bodyPartAndPainAlone_doNotPickAPassageByThemselves() {
+        assertTrue("warts" !in topics("my fingers hurt"))
+    }
+
+    @Test fun childrenDoNotMatchChili() {
+        assertTrue("capsaicin pepper sili" !in topics("my children have fever and cough"))
+    }
+}
+
+class NextVisitIntentTest {
+    @Test fun recognisesCheckUpQuestions() {
+        listOf("When is my next check-up?", "Yes, when is my next check up", "kailan ang balik ko sa clinic?", "when is my follow up").forEach {
+            assertTrue(it, Language.asksNextVisit(it))
+        }
+        listOf("my fingers hurt after chili", "what is metformin for?").forEach { assertTrue(it, !Language.asksNextVisit(it)) }
     }
 }

@@ -89,6 +89,7 @@
       "Itching",
       "Acne",
       "Warts",
+      "Eye Injuries",
       "Hives",
       "Hemorrhoids",
       "Diabetes",
@@ -143,6 +144,10 @@
     {
       "name": "Salbutamol",
       "set_id": "5d62969b-2ad9-6cf0-e063-6394a90ac2f0"
+    },
+    {
+      "name": "Capsaicin cream",
+      "set_id": "2cf17a28-711f-77bd-e063-6394a90a7061"
     }
   ]
 }

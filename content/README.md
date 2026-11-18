@@ -6,6 +6,7 @@ word for word. `build.py` refuses any excerpt that is not found exactly in its s
 | What | Source | License |
 | --- | --- | --- |
 | Health passages (Assistant answers, 21 topics) | MedlinePlus health topic summaries, U.S. National Library of Medicine, dated XML release | Public domain ("Summaries on health topic pages", medlineplus.gov/about/using/usingcontent). Attribute MedlinePlus; do not imply NLM endorsement. |
+| Extra health passages (chili/capsaicin on skin) | Verbatim excerpts from an FDA capsaicin cream label, listed in `curated.json` `knowledge_extras`, for topics MedlinePlus lacks | Public domain (US federal) |
 | Medicines (11) | FDA drug labels via openFDA / DailyMed, pinned by set id | Public domain (US federal). US products and units: Philippine brands and strengths may differ. |
 | Emergency phrases, verified | Words found in the MedlinePlus or FDA texts above | as above |
 | Emergency phrases, unverified | Everyday English and Tagalog/Taglish wordings written by the app team | Ours. Pending review by a Tagalog-speaking clinician. They only make the emergency card show more often. |

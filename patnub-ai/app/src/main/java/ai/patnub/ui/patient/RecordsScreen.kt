@@ -1,5 +1,7 @@
 package ai.patnub.ui.patient
 
+import ai.patnub.ui.components.appear
+import ai.patnub.ui.components.rememberAppearTracker
 import ai.patnub.R
 import ai.patnub.data.local.PatnubDatabase
 import ai.patnub.data.local.entity.UserRole
@@ -9,7 +11,7 @@ import ai.patnub.ui.components.RecordCard
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -33,8 +35,9 @@ fun RecordsScreen(db: PatnubDatabase, selfId: String, onScan: () -> Unit, modifi
         )
         return
     }
+    val appear = rememberAppearTracker()
     LazyColumn(modifier, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        items(list, key = { it.recordId }) { r ->
+        itemsIndexed(list, key = { _, r -> r.recordId }) { i, r ->
             val c = clinicians.find { it.userId == r.clinicianId }
             RecordCard(
                 assessment = r.assessment,
@@ -42,6 +45,7 @@ fun RecordsScreen(db: PatnubDatabase, selfId: String, onScan: () -> Unit, modifi
                 approvedBy = c?.let { "${it.displayName}, ${it.specialty} · ${it.facility}" } ?: r.clinicianId,
                 meds = r.meds, instructions = r.instructions, warnings = r.warnings,
                 followUp = r.followUp, version = r.version,
+                modifier = Modifier.appear(appear, r.recordId, i),
             )
         }
     }

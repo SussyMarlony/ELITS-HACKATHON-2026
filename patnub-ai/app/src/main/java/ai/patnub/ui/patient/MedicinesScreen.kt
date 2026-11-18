@@ -1,5 +1,9 @@
 package ai.patnub.ui.patient
 
+import ai.patnub.ui.components.appear
+import ai.patnub.ui.components.pressClickable
+import ai.patnub.ui.components.rememberAppearTracker
+import androidx.compose.foundation.lazy.itemsIndexed
 import ai.patnub.R
 import ai.patnub.data.local.PatnubDatabase
 import ai.patnub.data.local.entity.MedicationReferenceEntity
@@ -23,12 +27,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import ai.patnub.ui.components.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import ai.patnub.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -41,7 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.material3.TextButton
+import ai.patnub.ui.components.TextButton
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -93,13 +97,14 @@ fun MedicinesScreen(db: PatnubDatabase, selfId: String, modifier: Modifier = Mod
 @Composable
 private fun Browse(meds: List<MedicationReferenceEntity>, onPick: (MedicationReferenceEntity) -> Unit, onScan: () -> Unit, modifier: Modifier) {
     var query by remember { mutableStateOf("") }
+    val appear = rememberAppearTracker()
     LazyColumn(modifier, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), placeholder = { Text(stringResource(R.string.med_search)) }, singleLine = true)
         }
         item { Button(onClick = onScan, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.med_scan)) } }
-        items(MedicineMatcher.search(query, meds), key = { it.medId }) { m ->
-            Card(Modifier.fillMaxWidth().clickable { onPick(m) }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)) {
+        itemsIndexed(MedicineMatcher.search(query, meds), key = { _, m -> m.medId }) { i, m ->
+            Card(Modifier.appear(appear, m.medId, i).fillMaxWidth().pressClickable { onPick(m) }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)) {
                 Column(Modifier.padding(16.dp)) {
                     Text(m.name + (m.alias?.let { " ($it)" } ?: ""), style = MaterialTheme.typography.titleMedium)
                     Text(m.drugClass, color = MaterialTheme.colorScheme.onSurfaceVariant)

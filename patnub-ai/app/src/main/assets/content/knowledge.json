@@ -1540,6 +1540,17 @@
   "reviewed_by": null
  },
  {
+  "chunk_id": "mplus-eye-injuries-1",
+  "source_id": "mplus-eye-injuries",
+  "source_title": "MedlinePlus: Eye Injuries",
+  "publisher": "MedlinePlus (U.S. National Library of Medicine)",
+  "version": "2026-11-17",
+  "topic": "eye injuries",
+  "content_text": "The structure of your face helps protect your eyes from injury. Still, injuries can damage your eye, sometimes severely enough that you could lose your vision. Most eye injuries are preventable. If you play sports or work in certain jobs, you may need protection.\n\nThe most common type of injury happens when something irritates the outer surface of your eye. Certain jobs such as industrial jobs or hobbies such as carpentry make this type of injury more likely. It's also more likely if you wear contact lenses.\n\nChemicals or heat can burn your eyes. With chemicals, the pain may cause you to close your eyes. This traps the irritant next to the eye and may cause more damage. You should wash out your eye right away while you wait for medical help.",
+  "source_url": "https://medlineplus.gov/eyeinjuries.html",
+  "reviewed_by": null
+ },
+ {
   "chunk_id": "mplus-fainting-1",
   "source_id": "mplus-fainting",
   "source_title": "MedlinePlus: Fainting",
@@ -4804,6 +4815,17 @@
   "topic": "wounds and injuries",
   "content_text": "Other common types of injuries include:\n\nAnimal bites\n\nBruises\n\nBurns\n\nDislocations\n\nElectrical injuries\n\nFractures (broken bones)\n\nSprains and strains",
   "source_url": "https://medlineplus.gov/woundsandinjuries.html",
+  "reviewed_by": null
+ },
+ {
+  "chunk_id": "fda-capsaicin-cream-k1",
+  "source_id": "fda-capsaicin-cream",
+  "source_title": "FDA label for capsaicin (chili pepper extract) cream",
+  "publisher": "U.S. Food and Drug Administration (DailyMed)",
+  "version": "2025-02-28",
+  "topic": "capsaicin pepper sili",
+  "content_text": "Capsicum Oleoresin (Containing Capsaicin 0.05%)\n\nDo not use if allergic to chili peppers or if past allergic reaction to capsaicin.\n\nWarm water, perspiration or open pores can intensify the impact of this product and burning sentation.\n\nDo not get into eyes and avoid contact with other mucous membranes. If contact occurs or if pain, discomfort or skin redness occurs, continually rinse with cool water and seek medical help.\n\nIf inhaled, remove to fresh air. If breathing is difficult, get medical attention immediately.",
+  "source_url": "https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=2cf17a28-711f-77bd-e063-6394a90a7061",
   "reviewed_by": null
  }
 ]

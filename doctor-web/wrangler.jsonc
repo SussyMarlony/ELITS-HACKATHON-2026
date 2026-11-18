@@ -1,0 +1,6 @@
+// Static-only Worker: serves the built PWA from dist/. No server code (spec: no backend).
+{
+  "name": "patnub-clinic",
+  "compatibility_date": "2026-11-01",
+  "assets": { "directory": "./dist" }
+}

@@ -18,16 +18,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import ai.patnub.ui.components.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import ai.patnub.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import ai.patnub.ui.components.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -45,6 +45,10 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import ai.patnub.engine.EngineState
+import ai.patnub.engine.NativeEngine
+import ai.patnub.engine.CpuLevel
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -55,6 +59,9 @@ fun ProfilesScreen(
     db: PatnubDatabase,
     selfId: String,
     onUpdateProfile: suspend (name: String, age: Int, barangay: String) -> Unit,
+    engineState: EngineState,
+    modelName: String?,
+    onManageModel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val user by remember(selfId) { db.userDao().observeById(selfId) }.collectAsState(initial = null)
@@ -74,6 +81,43 @@ fun ProfilesScreen(
             )
         } else {
             ProfileCard(u, onEdit = { editing = true })
+        }
+        SettingsCard(engineState, modelName, onManageModel)
+    }
+}
+
+/** The on-device model this phone has and its live status, with the way to change it. */
+@Composable
+private fun SettingsCard(engineState: EngineState, modelName: String?, onManageModel: () -> Unit) {
+    SectionCard(stringResource(R.string.settings_title)) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 4.dp)) {
+            DetailRow(stringResource(R.string.settings_model), modelName ?: stringResource(R.string.settings_no_model))
+            DetailRow(
+                stringResource(R.string.engine_row_status),
+                stringResource(
+                    when (engineState) {
+                        EngineState.Unloaded -> R.string.engine_offline
+                        EngineState.Loading -> R.string.engine_loading
+                        is EngineState.Failed -> R.string.engine_failed
+                        EngineState.Generating -> R.string.engine_generating
+                        EngineState.Ready -> R.string.engine_ready
+                    },
+                ),
+            )
+            DetailRow(
+                stringResource(R.string.settings_cpu),
+                stringResource(
+                    when (NativeEngine.cpuLevel) {
+                        CpuLevel.BASIC -> R.string.settings_cpu_basic
+                        CpuLevel.STANDARD -> R.string.settings_cpu_standard
+                        CpuLevel.FAST -> R.string.settings_cpu_fast
+                    },
+                ),
+            )
+            if (!NativeEngine.cpuSupported) {
+                Text(stringResource(R.string.models_cpu_unsupported), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            OutlinedButton(onClick = onManageModel, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.engine_manage)) }
         }
     }
 }
@@ -118,7 +162,7 @@ private fun ProfileCard(user: UserEntity, onEdit: () -> Unit) {
 private fun DetailRow(label: String, value: String) {
     Row(Modifier.fillMaxWidth()) {
         Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-        Text(value, fontWeight = FontWeight.Medium)
+        Text(value, fontWeight = FontWeight.Medium, textAlign = TextAlign.End, modifier = Modifier.weight(1f, fill = false).padding(start = 12.dp))
     }
 }
 

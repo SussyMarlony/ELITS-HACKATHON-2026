@@ -24,7 +24,50 @@ object Language {
         RegexOption.IGNORE_CASE,
     )
 
-    fun mentionsHealth(text: String): Boolean = health.containsMatchIn(text)
+    fun mentionsHealth(text: String): Boolean = health.containsMatchIn(text) || feelings.containsMatchIn(text)
+
+    /** Worry and mood are health topics too ("I'm stressed", "nalulungkot ako"). */
+    private val feelings = Regex(
+        "worr|anxi|stress|nervous|panic|scared|afraid|sad\\b|depress|lonely|mood|cry|" +
+            "kaba|kinakabahan|nag-aalala|alala|takot|lungkot|nalulungkot|iyak|umiiyak|stress",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /** What kind of small talk a message is, or null when it is anything else. */
+    enum class SmallTalk { HELLO, THANKS, BYE }
+
+    private val hello = Regex("^(hi+|hello+|hey+|helo|good (morning|afternoon|evening|day)|kumusta|kamusta|musta|magandang (umaga|tanghali|hapon|gabi)|yo)\\b", RegexOption.IGNORE_CASE)
+    private val thanks = Regex("^(thanks?|thank you|ty|salamat|maraming salamat|thx)\\b", RegexOption.IGNORE_CASE)
+    private val bye = Regex("^(bye|goodbye|see you|paalam|sige po|ingat)\\b", RegexOption.IGNORE_CASE)
+
+    /**
+     * Greetings, thanks and goodbyes: short (up to 6 words) with no health word, so "thanks, but it
+     * still hurts" still goes to the Assistant. "ok", "yes", "oo" are not small talk: they answer
+     * the Assistant's own questions.
+     */
+    fun smallTalk(text: String): SmallTalk? {
+        val t = text.trim().trimEnd('!', '.', '?', ' ')
+        if (t.split(Regex("\\s+")).size > 6 || mentionsHealth(t)) return null
+        return when {
+            hello.containsMatchIn(t) -> SmallTalk.HELLO
+            thanks.containsMatchIn(t) -> SmallTalk.THANKS
+            bye.containsMatchIn(t) -> SmallTalk.BYE
+            else -> null
+        }
+    }
+
+    /** Tagalog greeting or thanks words, for answering small talk in kind. */
+    fun soundsTagalog(text: String): Boolean =
+        isTagalog(text) || Regex("kumusta|kamusta|musta|magandang|salamat|paalam|ingat|\\bpo\\b", RegexOption.IGNORE_CASE).containsMatchIn(text)
+
+    /** "When is my next check-up?", "kailan ang balik ko?": answered from the record, not the model. */
+    private val nextVisit = Regex(
+        "check[ -]?ups?|follow[ -]?ups?|appointment|next (visit|consult|clinic)|come back|go back to the (clinic|doctor|health)|" +
+            "balik|bumalik|konsulta|schedule",
+        RegexOption.IGNORE_CASE,
+    )
+
+    fun asksNextVisit(text: String): Boolean = nextVisit.containsMatchIn(text)
 
     fun isTagalog(text: String): Boolean {
         val words = text.lowercase().split(Regex("[^\\p{L}']+")).filter { it.isNotEmpty() }

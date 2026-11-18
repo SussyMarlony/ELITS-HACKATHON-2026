@@ -7,6 +7,7 @@ import rootPubText from '../../contract/demo/root_pub.txt?raw';
 import type { Draft } from './draft.ts';
 import { patientCopy, RECORD_TTL_S } from './issue.ts';
 import { MIN_PASSCODE, unwrapSecret, wrapSecret } from './passcode.ts';
+import { checkProfileFields, rekeyStaffPasscode, resignStaffProfile, type ProfilePatch } from './profile.ts';
 import { all, audit, byPatient, dumpAll, get, put, restoreAll, type AuditEvent, type ClinicRecord, type License, type Patient, type Staff } from './store.ts';
 
 const ROOT_PUB = unb64u(rootPubText.trim());
@@ -59,9 +60,8 @@ export interface NewClinician {
 }
 
 export function checkClinician(c: NewClinician, confirm: string): string | null {
-  if (!c.name.trim()) return 'Enter the clinician’s name.';
-  if (!c.profession.trim()) return 'Enter the profession, for example MD, RN or RM.';
-  if (!c.license_no.trim()) return 'Enter the PRC license number.';
+  const fieldErr = checkProfileFields(c);
+  if (fieldErr) return fieldErr;
   if (c.passcode.length < MIN_PASSCODE) return `The passcode needs at least ${MIN_PASSCODE} characters.`;
   if (c.passcode !== confirm) return 'The passcodes do not match.';
   return null;
@@ -139,6 +139,60 @@ export function wipeKey(k?: KeyPair | null) {
 
 export async function recordLockAudit(staffId: string, reason: 'manual' | 'idle') {
   await audit(staffId, 'WORKSTATION_LOCKED', staffId, reason);
+}
+
+/** Updates the signed-in admin's certified profile fields by unwrapping their admin key with their passcode. */
+export async function updateOwnProfile(staffId: string, patch: ProfilePatch, passcode: string): Promise<Staff> {
+  const staff = await get<Staff>('staff', staffId);
+  if (!staff || staff.disabled) throw new Error('Clinician account is unavailable.');
+  if (!staff.is_admin || !staff.admin_key) {
+    throw new Error('Only a clinic admin can re-sign certified profile details.');
+  }
+  const rawAdmin = await unwrapSecret(staff.admin_key, passcode);
+  if (!rawAdmin) {
+    await audit(staffId, 'PROFILE_UPDATE_FAILED', staffId);
+    throw new Error('Wrong passcode.');
+  }
+  const adminKey = splitKey(rawAdmin);
+  rawAdmin.fill(0);
+  try {
+    const updated = await resignStaffProfile(staff, patch, adminKey);
+    await put('staff', updated);
+    await audit(staffId, 'CLINICIAN_UPDATED', staffId, `${updated.body.name}, ${updated.body.profession}`);
+    return updated;
+  } finally {
+    wipeKey(adminKey);
+  }
+}
+
+/** Updates any clinician's certified profile fields using an already-unlocked clinic admin key. */
+export async function updateStaffProfileByAdmin(
+  staffId: string,
+  patch: ProfilePatch,
+  adminKey: KeyPair,
+  actor: string,
+): Promise<Staff> {
+  const staff = await get<Staff>('staff', staffId);
+  if (!staff) throw new Error('Clinician not found.');
+  const updated = await resignStaffProfile(staff, patch, adminKey);
+  await put('staff', updated);
+  await audit(actor, 'CLINICIAN_UPDATED', staffId, `${updated.body.name}, ${updated.body.profession}`);
+  return updated;
+}
+
+/** Changes the signed-in clinician's passcode after verifying their current passcode. */
+export async function changeOwnPasscode(
+  staffId: string,
+  currentPasscode: string,
+  newPasscode: string,
+  confirm: string,
+): Promise<Staff> {
+  const staff = await get<Staff>('staff', staffId);
+  if (!staff || staff.disabled) throw new Error('Clinician account is unavailable.');
+  const updated = await rekeyStaffPasscode(staff, currentPasscode, newPasscode, confirm);
+  await put('staff', updated);
+  await audit(staffId, 'PASSCODE_CHANGED', staffId);
+  return updated;
 }
 
 // ---------- patients ----------

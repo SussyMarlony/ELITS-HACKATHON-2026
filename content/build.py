@@ -57,6 +57,19 @@ for path in sorted(glob.glob(os.path.join(SRC, "mplus-*.json"))):
             "source_url": d["url"], "reviewed_by": None,
         })
 
+# ---------- extra passages: verbatim excerpts for topics MedlinePlus lacks (e.g. chili on skin) ----------
+for x in curated.get("knowledge_extras", []):
+    d, text = load(x["source"])
+    for e in x["excerpts"]:
+        must_contain(f"knowledge {x['source']}", text, e)
+    knowledge.append({
+        "chunk_id": f"{x['source']}-k1", "source_id": x["source"],
+        "source_title": x["title"], "publisher": "U.S. Food and Drug Administration (DailyMed)",
+        "version": re.sub(r"^(\d{4})(\d{2})(\d{2})$", r"\1-\2-\3", str(d["effective_time"])),  # app parses ISO dates
+        "topic": x["topic"], "content_text": "\n\n".join(x["excerpts"]),
+        "source_url": d["url"], "reviewed_by": x.get("reviewed_by"),
+    })
+
 # ---------- medicines: FDA labels, verbatim excerpts ----------
 medicines = []
 for med in curated["medicines"]:
@@ -152,7 +165,7 @@ r += ["", "## Medicines (FDA labels: US products and US units)", ""]
 for m in medicines:
     r.append(f"- [ ] **{m['name']}**{' (' + m['alias'] + ')' if m['alias'] else ''} · {m['source_url']}")
     r.append(f"  strengths {', '.join(m['strengths']) or '—'} · forms {', '.join(m['forms'])} · {len(m['uses']) + len(m['side_effects']) + len(m['warnings'])} excerpts")
-r += ["", f"## Health passages ({len(knowledge)} passages from MedlinePlus)", ""]
+r += ["", f"## Health passages ({len(knowledge)} passages from MedlinePlus and curated FDA excerpts)", ""]
 for t in sorted({k['source_title'] for k in knowledge}):
     r.append(f"- [ ] {t}")
 open(os.path.join(HERE, "REVIEW.md"), "w").write("\n".join(r) + "\n")

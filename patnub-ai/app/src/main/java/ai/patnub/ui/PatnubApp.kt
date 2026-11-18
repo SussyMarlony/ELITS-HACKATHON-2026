@@ -3,6 +3,7 @@ package ai.patnub.ui
 import ai.patnub.R
 import ai.patnub.engine.Engine
 import ai.patnub.engine.EngineState
+import ai.patnub.models.ModelCatalog
 import ai.patnub.models.ModelStore
 import ai.patnub.ui.models.ModelScreen
 import ai.patnub.identity.PatientIdentity
@@ -15,6 +16,20 @@ import ai.patnub.ui.patient.PatientNavigationBar
 import ai.patnub.ui.patient.PatientScreen
 import ai.patnub.ui.patient.PatientServices
 import ai.patnub.ui.patient.ChatState
+import ai.patnub.ui.components.Motion
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.unit.IntOffset
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.imePadding
@@ -29,7 +44,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import ai.patnub.ui.components.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -92,7 +107,12 @@ fun PatnubApp(
             )
         },
         bottomBar = {
-            if (profile !is SelfProfile.Missing && !showModels) {
+            // Leaves downward with the Models push and comes back up with the pop.
+            AnimatedVisibility(
+                visible = profile !is SelfProfile.Missing && !showModels,
+                enter = if (Motion.enabled) slideInVertically(Motion.spring(0.4f)) { it } + fadeIn() else fadeIn(),
+                exit = if (Motion.enabled) slideOutVertically(Motion.spring(0.3f)) { it } + fadeOut() else fadeOut(),
+            ) {
                 PatientNavigationBar(selected = patientTab, onSelect = { patientTab = it })
             }
         },
@@ -106,17 +126,29 @@ fun PatnubApp(
             // The keyboard pushes content up instead of covering inputs (chat box, forms).
             .consumeWindowInsets(innerPadding)
             .imePadding()
-        when {
-            profile == SelfProfile.Missing -> OnboardingScreen(onCreate = { n, a, b -> identity.create(n, a, b) }, modifier = modifier)
-            showModels -> ModelScreen(models.store, engineState, models.loadedPackageId(), models.startModel, modifier)
-            else -> PatientScreen(
-                tab = patientTab, services = services, chat = chat,
-                modelReady = engineState == EngineState.Ready || engineState == EngineState.Generating,
-                onManageModel = { showModels = true },
-                onTab = { patientTab = it },
-                onUpdateProfile = { n, a, b -> identity.update(n, a, b) },
-                modifier = modifier,
-            )
+        val page = when {
+            profile == SelfProfile.Missing -> Page.Onboarding
+            showModels -> Page.Models
+            else -> Page.Patient
+        }
+        // Models is a push: in from the right, back out to the right (same path both ways).
+        AnimatedContent(page, transitionSpec = { pageTransition(initialState, targetState) }, label = "page") { p ->
+            when (p) {
+                Page.Onboarding -> OnboardingScreen(onCreate = { n, a, b -> identity.create(n, a, b) }, modifier = modifier)
+                Page.Models -> ModelScreen(models.store, engineState, models.loadedPackageId(), models.startModel, modifier)
+                Page.Patient -> PatientScreen(
+                    tab = patientTab, services = services, chat = chat,
+                    modelReady = engineState == EngineState.Ready || engineState == EngineState.Generating,
+                    engineState = engineState,
+                    // The running model, else the chosen one if it is installed (loads on next start).
+                    modelName = (models.loadedPackageId()?.let { id -> ModelCatalog.packages.find { it.id == id } }
+                        ?: models.store.selected.takeIf { models.store.isReady(it) })?.title,
+                    onManageModel = { showModels = true },
+                    onTab = { patientTab = it },
+                    onUpdateProfile = { n, a, b -> identity.update(n, a, b) },
+                    modifier = modifier,
+                )
+            }
         }
     }
 }
@@ -141,3 +173,19 @@ private fun PatnubTopBar(engine: Engine, onManage: () -> Unit, onDebugReset: (()
     )
 }
 
+
+private enum class Page { Onboarding, Patient, Models }
+
+private fun pageTransition(from: Page, to: Page): ContentTransform {
+    if (!Motion.enabled) return fadeIn(tween(150)) togetherWith fadeOut(tween(150))
+    val push = tween<IntOffset>(380, easing = Motion.EaseDrawer)
+    return when {
+        to == Page.Models -> slideInHorizontally(push) { it } togetherWith
+            (slideOutHorizontally(push) { -it / 4 } + fadeOut(tween(380)))
+        from == Page.Models -> (slideInHorizontally(push) { -it / 4 } + fadeIn(tween(380))) togetherWith
+            slideOutHorizontally(push) { it }
+        // Onboarding finished: a calm cross-fade with the new content settling in.
+        else -> (fadeIn(tween(300, easing = Motion.EaseOut)) + scaleIn(tween(300, easing = Motion.EaseOut), initialScale = 0.97f)) togetherWith
+            fadeOut(tween(150))
+    }.apply { targetContentZIndex = if (to == Page.Models) 1f else 0f }
+}

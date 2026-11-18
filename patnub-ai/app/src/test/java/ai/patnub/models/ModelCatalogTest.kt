@@ -15,6 +15,24 @@ class ModelCatalogTest {
         assertEquals(PhoneTier.HIGH, ModelCatalog.tierFor(11L * gib))
     }
 
+    @Test fun importedFilesAreMatchedToTheirPackageBySize() {
+        val all = ModelCatalog.packages
+        val gemma4 = all.first { it.id == "gemma4-e2b" }
+        assertEquals(gemma4.main, ModelCatalog.fileOfSize(gemma4.main.bytes))
+        assertEquals(null, ModelCatalog.fileOfSize(12_345))
+        // Every package is found from exactly its own files.
+        all.forEach { p -> assertEquals(p.id, ModelCatalog.packageForFiles(p.files.toSet())?.id) }
+        assertEquals(null, ModelCatalog.packageForFiles(emptySet()))
+        // MedGemma main file alone: the streamed package (complete) beats the full one (missing vision)...
+        val medMain = all.first { it.medical }.main
+        val streamed = ModelCatalog.packageForFiles(setOf(medMain))!!
+        assertTrue(streamed.streamed && streamed.files.size == 1)
+        // ...but with the vision file already on the phone, the full package is complete and wins.
+        val vision = all.first { it.medical && it.vision != null }.vision!!
+        val full = ModelCatalog.packageForFiles(setOf(medMain)) { it == vision }!!
+        assertTrue(!full.streamed && full.vision == vision)
+    }
+
     @Test fun recommendations() {
         assertEquals("gemma4-e2b", ModelCatalog.recommendedFor(3L * gib).id)
         assertTrue(ModelCatalog.recommendedFor(6L * gib).streamed)

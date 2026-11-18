@@ -35,6 +35,12 @@
 #ifndef HWCAP_ASIMDDP
 #define HWCAP_ASIMDDP (1 << 20)  // arm64 dot-product instructions (Linux uapi asm/hwcap.h)
 #endif
+#ifndef HWCAP_ASIMDHP
+#define HWCAP_ASIMDHP (1 << 10)  // arm64 half-precision vector arithmetic
+#endif
+#ifndef HWCAP2_I8MM
+#define HWCAP2_I8MM (1 << 13)    // arm64 int8 matrix multiply (AT_HWCAP2)
+#endif
 #endif
 
 extern "C" void msr_streaming_cancel();
@@ -294,17 +300,26 @@ int generate_resident(Bridge* b, const std::string& prompt, const std::string& i
 extern "C" {
 
 /**
- * Whether this CPU can run the ggml build. The arm64 build is compiled for armv8.2-a+dotprod
- * (CMakeLists.txt), so phones without dot-product instructions (Cortex-A53-only) would crash
- * with SIGILL on the first matrix multiply. This function itself uses no such instructions.
+ * Whether this CPU has the instructions this build of the library was compiled for
+ * (CMakeLists.txt: PATNUB_NEEDS_*). NativeEngine picks the build from the same CPU bits, so this
+ * is a backstop: without it the first matrix multiply would kill the app with SIGILL.
+ * This function itself uses no such instructions.
  */
 JNIEXPORT jboolean JNICALL
 Java_ai_patnub_engine_NativeEngine_nativeCpuSupported(JNIEnv*, jclass) {
 #if defined(__aarch64__) && defined(__linux__)
-    return (getauxval(AT_HWCAP) & HWCAP_ASIMDDP) != 0 ? JNI_TRUE : JNI_FALSE;
-#else
-    return JNI_TRUE;
+    [[maybe_unused]] const unsigned long hw = getauxval(AT_HWCAP), hw2 = getauxval(AT_HWCAP2);
+#ifdef PATNUB_NEEDS_DOTPROD
+    if (!(hw & HWCAP_ASIMDDP)) return JNI_FALSE;
 #endif
+#ifdef PATNUB_NEEDS_FP16
+    if (!(hw & HWCAP_ASIMDHP)) return JNI_FALSE;
+#endif
+#ifdef PATNUB_NEEDS_I8MM
+    if (!(hw2 & HWCAP2_I8MM)) return JNI_FALSE;
+#endif
+#endif
+    return JNI_TRUE;
 }
 
 JNIEXPORT jlong JNICALL

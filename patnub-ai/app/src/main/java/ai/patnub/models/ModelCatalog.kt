@@ -35,6 +35,23 @@ data class ModelPackage(
  * images) wherever it can run, Gemma 4 E2B (Apr 2026, built for phones) on low-RAM phones.
  */
 object ModelCatalog {
+    /** The catalog file with exactly [bytes] bytes. Names change when people copy files around; sizes don't. */
+    fun fileOfSize(bytes: Long): ModelFile? = packages.flatMap { it.files }.firstOrNull { it.bytes == bytes }
+
+    /**
+     * The package [picked] files are for: first one they complete (counting files already [present]
+     * on the phone), then the one using most picked files, then the bigger one (MedGemma with
+     * vision over streamed). Null when none of the files is a catalog file.
+     */
+    fun packageForFiles(picked: Set<ModelFile>, present: (ModelFile) -> Boolean = { false }): ModelPackage? =
+        packages.filter { p -> p.files.any { it in picked } }.maxWithOrNull(
+            compareBy<ModelPackage>(
+                { p -> p.files.all { it in picked || present(it) } },
+                { p -> p.files.count { it in picked } },
+                { p -> p.files.size },
+            ),
+        )
+
     private const val GiB = 1L shl 30
     private const val HF = "https://huggingface.co"
 

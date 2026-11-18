@@ -22,7 +22,7 @@ class ConversationTest {
         val p = PromptBuilder.chat(ChatFormat.GEMMA4, "Two days, a little swollen, no fever", emptyList(), emptyList(), history)
         assertTrue(p.contains("<|turn>user\nMy fingers hurt<turn|>\n<|turn>model\nHow long has it hurt, and is it swollen?<turn|>"))
         assertTrue(p.contains("Two days, a little swollen, no fever\n\n[Reply in simple English.]<turn|>\n<|turn>model\n"))
-        assertTrue("Ask 2 or 3 short clarifying questions" in p)
+        assertTrue("Help in your first reply" in p)
     }
 
     @Test fun promptsShareAPrefixSoTheCacheIsReused() {

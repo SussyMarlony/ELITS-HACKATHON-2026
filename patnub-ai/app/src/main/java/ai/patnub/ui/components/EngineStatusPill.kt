@@ -104,7 +104,7 @@ private fun EngineDetails(engine: Engine, state: EngineState, onManage: () -> Un
             if (st.generatedTokens > 0) Row2(stringResource(R.string.engine_row_speed), "%.1f tok/s · first token %d ms".format(st.generateTokensPerSecond, st.ttftMs))
             st.thermalC?.let { Row2(stringResource(R.string.engine_row_temp), "$it °C") }
         }
-        androidx.compose.material3.Button(onClick = onManage, modifier = Modifier.padding(top = 8.dp)) {
+        Button(onClick = onManage, modifier = Modifier.padding(top = 8.dp)) {
             Text(stringResource(R.string.engine_manage))
         }
     }

@@ -26,9 +26,9 @@ Biggest wins first:
 - [x] **Use the right CPU cores.** `CpuInfo.performanceCores()` reads `cpu_capacity` (falling back
       to `cpuinfo_max_freq` > slowest cluster) so little cores are excluded (e.g. 2 on Snapdragon 695,
       4 on Snapdragon 8 Gen 2).
-- [ ] **Newer ARM instructions.** Build is `armv8.2-a+dotprod` only. Add an `i8mm` variant
-      (`GGML_CPU_ALL_VARIANTS` + `GGML_BACKEND_DL`, or two `.so` builds chosen at runtime) for
-      2021+ phones; measure on a real device.
+- [x] **Newer ARM instructions.** arm64 ships three builds of `libpatnub_llm` (ARMv8.0, ARMv8.2+dotprod,
+      ARMv8.2+dotprod+fp16+i8mm); `CpuFeatures` reads AT_HWCAP/AT_HWCAP2 and loads the best. Still to do:
+      measure the i8mm build against the dotprod one on a 2021+ phone (TTFT, tok/s).
 - [x] **Allow weight repacking on phones with headroom.** `ModelCatalog.shouldRepack` enables
       `use_extra_bufts` for Gemma 4 Q4_0 on 6 GB+ phones (measured +359 MB anon, TTFT 1231 → 615 ms)
       and MedGemma Q4_K_M on 10 GB+ phones (kept off on 8 GB phones where Q4_K_M adds +1.5 GB anon).
@@ -96,10 +96,8 @@ Biggest wins first:
 - [ ] msr_engine B1–B4 (`msr_engine/LIMITATION.md`): typed cancel status, per-engine `MSR_NO_ALLOC`,
       provider singleton (switching models restarts the app), node-name refill trigger.
 - [ ] Gemma 4 cannot be streamed (msr_engine patches the Gemma 3 graph only).
-- [ ] Phones without ARMv8.2 dot product are not supported (build needs dotprod): Cortex-A53-only
-      phones and older big cores (A57/A72/A73), e.g. Helio P70 (OPPO CPH1969). Since the CPU check
-      in `NativeEngine.load` they get a clear "can't run the model" message instead of a SIGILL crash.
-      To run models there: a second `armv8-a` build of `libpatnub_llm.so` chosen at runtime.
+- [x] Phones without ARMv8.2 dot product (Cortex-A53-only, A57/A72/A73, e.g. Helio P70 / OPPO CPH1969) now run
+      models on the ARMv8.0 build. Still to do: measure speed there; small models only (Gemma 4 E2B) are realistic.
 - [ ] Verify 16 KB page-size compatibility: run `patnub-ai/scripts/check-16kb.py` on a built APK
       (static ELF + zip alignment check), then smoke-test on a 16 KB emulator image or an Android 15+
       device with "Boot with 16KB page size" (`adb shell getconf PAGE_SIZE` → 16384).

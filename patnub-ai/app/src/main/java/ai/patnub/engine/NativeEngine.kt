@@ -157,17 +157,24 @@ class NativeEngine : Engine {
     }
 
     companion object {
-        init {
-            System.loadLibrary("patnub_llm")
+        /** The CPU level actually loaded (CpuFeatures picks it; see CMakeLists.txt for the builds). */
+        val cpuLevel: CpuLevel = CpuFeatures.level.let { wanted ->
+            try {
+                System.loadLibrary(wanted.library)
+                wanted
+            } catch (e: UnsatisfiedLinkError) {
+                // A build missing from the APK: use the main one. nativeCpuSupported still guards it.
+                System.loadLibrary(CpuLevel.STANDARD.library)
+                CpuLevel.STANDARD
+            }
         }
 
         private const val CPU_UNSUPPORTED =
-            "this phone's processor lacks the ARMv8.2 dot-product instructions the AI model is built for " +
-                "(Cortex-A53/A57/A72/A73 cores). Answers come from your saved sources."
+            "this phone's processor can't run the AI model build that was loaded. Answers come from your saved sources."
 
         @JvmStatic private external fun nativeCpuSupported(): Boolean
 
-        /** False on phones whose CPU can't run the model build (no ARMv8.2 dot product). */
+        /** False only if the loaded build needs instructions this CPU lacks (a missing build fell back). */
         val cpuSupported: Boolean by lazy { nativeCpuSupported() }
 
         @JvmStatic private external fun nativeLoad(

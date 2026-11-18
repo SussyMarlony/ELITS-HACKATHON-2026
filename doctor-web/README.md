@@ -50,17 +50,13 @@ Requires Node 20+.
 2. DevTools > Application > Service workers: `sw.js` is activated.
 3. DevTools > Network > Offline, then reload. The page still loads and the pill says Offline.
 
-## Deploy (Cloudflare Pages)
+## Deploy (Cloudflare Workers, static assets)
 
-Connect the repo in the Cloudflare dashboard with:
+`wrangler.jsonc` serves `dist/` as static files; there is no server code.
 
-| Setting | Value |
-| --- | --- |
-| Root directory | `doctor-web` |
-| Build command | `npm run build` |
-| Build output directory | `dist` |
-
-Static files only; no Workers or Functions needed.
+- From your machine: `npx wrangler login` once, then `npm run deploy`.
+- From git: Workers & Pages > Create > Import a repository, root directory `doctor-web`,
+  build command `npm run build`, deploy command `npx wrangler deploy`.
 
 ## Offline caching
 

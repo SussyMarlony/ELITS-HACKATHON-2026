@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.app.DownloadManager
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.core.content.getSystemService
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +21,8 @@ sealed interface InstallState {
     /** [progress] 0..1 over all files of the package. */
     data class Downloading(val progress: Float) : InstallState
     data class Verifying(val progress: Float) : InstallState
+    /** Copying imported files into the app, [progress] 0..1. */
+    data class Copying(val progress: Float) : InstallState
     data object Ready : InstallState
     data class Failed(val message: String) : InstallState
 }
@@ -52,7 +55,7 @@ class ModelStore(private val context: Context) {
 
     fun refresh() {
         _state.value = ModelCatalog.packages.associate { p ->
-            p.id to (_state.value[p.id]?.takeIf { it is InstallState.Downloading || it is InstallState.Verifying }
+            p.id to (_state.value[p.id]?.takeIf { it is InstallState.Downloading || it is InstallState.Verifying || it is InstallState.Copying }
                 ?: if (isReady(p)) InstallState.Ready else InstallState.NotInstalled)
         }
     }
@@ -109,33 +112,57 @@ class ModelStore(private val context: Context) {
         verify(p)
     }
 
+    /** Which catalog files the user picked (USB, SD card, a browser download), by exact size. Others are left out. */
+    suspend fun identify(uris: List<Uri>): Map<Uri, ModelFile> = withContext(Dispatchers.IO) {
+        uris.mapNotNull { uri -> sizeOf(uri)?.let(ModelCatalog::fileOfSize)?.let { uri to it } }.toMap()
+    }
+
+    private fun sizeOf(uri: Uri): Long? {
+        val fd = runCatching { context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } }.getOrNull()
+        if (fd != null && fd >= 0) return fd
+        // Some providers report an unknown length on the descriptor but know it in the metadata.
+        return runCatching {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c ->
+                if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else null
+            }
+        }.getOrNull()
+    }
+
     /**
-     * Copies model files the user picked (USB, SD card, a browser download). Files are matched
-     * to the catalog by size, then verified. Returns how many files were recognised.
+     * Copies the [files] that belong to [p] into the app, then verifies the package. A failed copy
+     * removes its partial file, so a half-copied model is never mistaken for a real one.
      */
-    suspend fun import(p: ModelPackage, uris: List<Uri>): Int = withContext(Dispatchers.IO) {
-        var matched = 0
-        for (uri in uris) {
-            val size = context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1
-            val f = p.files.firstOrNull { it.bytes == size } ?: continue
-            matched++
+    suspend fun import(p: ModelPackage, files: Map<Uri, ModelFile>) = withContext(Dispatchers.IO) {
+        val toCopy = files.filterValues { it in p.files && !isVerified(it) }
+        val need = toCopy.values.sumOf { it.bytes }
+        if (need > freeBytes()) {
+            set(p, InstallState.Failed("Not enough free space: need ${need.gib()} GB, have ${freeBytes().gib()} GB."))
+            return@withContext
+        }
+        var copied = 0L
+        for ((uri, f) in toCopy) {
             marker(f).delete()
-            var copied = 0L
-            context.contentResolver.openInputStream(uri)!!.use { input ->
-                fileFor(f).outputStream().use { out ->
-                    val buf = ByteArray(1 shl 20)
-                    while (true) {
-                        val n = input.read(buf)
-                        if (n < 0) break
-                        out.write(buf, 0, n)
-                        copied += n
-                        set(p, InstallState.Downloading(copied.toFloat() / f.bytes))
+            try {
+                val input = context.contentResolver.openInputStream(uri) ?: error("cannot open ${f.fileName}")
+                input.use {
+                    fileFor(f).outputStream().use { out ->
+                        val buf = ByteArray(1 shl 20)
+                        while (true) {
+                            val n = it.read(buf)
+                            if (n < 0) break
+                            out.write(buf, 0, n)
+                            copied += n
+                            if (copied % (32L shl 20) < (1 shl 20)) set(p, InstallState.Copying(copied.toFloat() / need))
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                fileFor(f).delete()
+                set(p, InstallState.Failed("Copying ${f.fileName} failed: ${e.message ?: e.javaClass.simpleName}"))
+                return@withContext
             }
         }
-        if (matched > 0) verify(p) else set(p, InstallState.Failed("Those files are not the ${p.title} model files."))
-        matched
+        verify(p)
     }
 
     private suspend fun verify(p: ModelPackage) = withContext(Dispatchers.IO) {

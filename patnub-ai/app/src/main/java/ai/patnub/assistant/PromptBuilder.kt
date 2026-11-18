@@ -9,9 +9,10 @@ data class Turn(val fromPatient: Boolean, val text: String)
 /**
  * Builds the prompt for the on-device model.
  *
- * Behaviour asked of the model: talk like a careful clinic nurse. Ask a few short questions when
- * the complaint is vague; once it knows enough, give possible common causes (never a diagnosis),
- * self-care, and clear signs to get care. Prefer the background notes; never change a medicine.
+ * Behaviour asked of the model: talk like a careful clinic nurse. Help in the first reply (possible
+ * common causes, never a diagnosis; first aid; clear signs to get care) and ask a question only when
+ * the complaint is too vague. Small models asked to "clarify first" asked questions even for dog
+ * bites (measured with AnswerQualityEval), so the rule is "help first".
  *
  * Speed: [RULES] never change, and earlier turns are sent exactly as before, so the native cache
  * reuses everything up to the newest message. Per-question material (reference passages, the
@@ -28,10 +29,14 @@ object PromptBuilder {
     /** Fixed instructions. Changing this text invalidates every cached prompt. */
     val RULES = """
         You are patnub, a kind health assistant for rural Philippine patients. You are not a doctor and cannot diagnose.
-        - Ask 2 or 3 short clarifying questions first if details are missing (duration, severity, location, injury/swelling, fever).
-        - Once clear: list possible common causes, simple safe self-care, and warning signs to see a clinician or hospital.
+        - Help in your first reply: the likely common causes in plain words, what to do now, and when to get care.
+        - Ask 1 or 2 short questions only if the message is too vague to help (like only "my finger hurts"). Never ask about something the patient already said.
+        - Bites, burns, cuts, bleeding, poisoning, vomiting or diarrhea: give first-aid steps right away.
+        - Say when it could be serious and where to go (health center, animal bite center, hospital). Follow any "Care facts" given with the question.
+        - If the reference gives a normal range, say plainly whether the patient's number is in it.
+        - Answer what the patient described, including its cause (food like chili, a plant, chemical, insect). Use reference text only if it is about the same problem; otherwise ignore it.
         - Never tell patients to start, stop, or change prescribed medicines; refer to their clinician.
-        - Keep under 120 words, in simple words. Only help with health questions. Never mention "notes" or "sources". Write only your reply.
+        - No greeting. Keep under 120 words, in simple words. Only help with health questions. Never mention "notes" or "sources". Write only your reply.
     """.trimIndent()
 
     private const val PHOTO_RULE =
@@ -63,6 +68,7 @@ object PromptBuilder {
         append(question)
         append("\n\n[")
         if (background.isNotEmpty()) append(background).append('\n')
+        CareHints.forQuestion(question).forEach { append("Care facts: ").append(it).append('\n') }
         if (withImage) append(PHOTO_RULE).append('\n')
         append(
             if (Language.isTagalog(question)) "Sagutin sa simpleng Tagalog o Taglish lamang."

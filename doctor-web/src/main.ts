@@ -3,12 +3,13 @@ import qrcode from 'qrcode-generator';
 import type { KeyPair } from '../../contract/contract.ts';
 import { AuthThrottle } from './auth-guard.ts';
 import {
-  activateLicense, checkClinician, createClinician, eraseDevice, exportBackup, getLicense, importBackup, issue, licenseActive,
-  listAllRecords, listAudit, listPatients, listStaff, qrValid, readCheckIn, recordLockAudit, recordsFor, reissue, savePatient,
-  setDisabled, signIn, unlockAdmin, wipeKey, type CheckInResult, type Session,
+  activateLicense, changeOwnPasscode, checkClinician, createClinician, eraseDevice, exportBackup, getLicense, importBackup, issue,
+  licenseActive, listAllRecords, listAudit, listPatients, listStaff, qrValid, readCheckIn, recordLockAudit, recordsFor, reissue,
+  savePatient, setDisabled, signIn, unlockAdmin, updateOwnProfile, updateStaffProfileByAdmin, wipeKey,
+  type CheckInResult, type Session,
 } from './clinic.ts';
 import { draftFromNote, type Draft } from './draft.ts';
-import { attachDragDismiss } from './spring.ts';
+import { attachDragDismiss, syncSegmentedPill } from './spring.ts';
 import type { AuditEvent, ClinicRecord, License, Patient, Staff } from './store.ts';
 import './style.css';
 
@@ -34,13 +35,17 @@ const st: {
   previous?: ClinicRecord;
   shown?: ClinicRecord;
   pendingCheckIn?: CheckInResult;
+  profileOpen: boolean;
+  profileTab: 'profile' | 'passcode';
+  editingStaffId?: string;
   query: string;
+  historyFilter: 'all' | 'current';
   /** Set when the idle/manual lock signed someone out; their unfinished consultation is kept for them only. */
   lockedFrom?: string;
   loaded: boolean;
 } = {
   staff: [], patients: [], allRecords: [], auditLog: [], records: [],
-  panel: 'patient', stage: 'history', note: '', encounterDate: today(), query: '', loaded: false,
+  panel: 'patient', stage: 'history', note: '', encounterDate: today(), profileOpen: false, profileTab: 'profile', query: '', historyFilter: 'all', loaded: false,
 };
 
 const DEBUG = new URLSearchParams(location.search).has('debug');
@@ -48,8 +53,11 @@ const IDLE_LOCK_MS = 10 * 60_000; // shared clinic device (spec v1.2)
 const ADMIN_IDLE_MS = 2 * 60_000; // step-up admin key expires quickly if unattended
 const signInThrottle = new AuthThrottle();
 const adminThrottle = new AuthThrottle();
+const profileThrottle = new AuthThrottle();
 const app = document.querySelector<HTMLElement>('#app')!;
 let modalDragCleanup: (() => void) | null = null;
+let prevModalOpen = false;
+let profileTrigger: HTMLElement | null = null;
 
 function today() {
   const d = new Date();
@@ -57,6 +65,9 @@ function today() {
 }
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const plural = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : many);
+const numFmt = new Intl.NumberFormat();
+const fmtNum = (n: number) => numFmt.format(n);
 const fmtDate = (unix: number) => new Date(unix * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 const fmtDay = (iso: string) => new Date(`${iso}T00:00`).toLocaleDateString(undefined, { dateStyle: 'medium' });
 const fmtRelTime = (ms: number) => {
@@ -81,11 +92,19 @@ function daysLeft(expUnix: number): number {
 
 const by = (s: Staff | undefined) => (s ? `${s.body.name}, ${s.body.profession}` : 'Unknown clinician');
 
+function firstGrapheme(s: string): string {
+  const clean = s.replace(/^[^\p{L}\p{N}]+/u, '');
+  const src = clean || s;
+  return [...src][0] ?? '';
+}
+
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return '?';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  if (parts.length === 1) return [...parts[0]].slice(0, 2).join('').toUpperCase() || '?';
+  const a = firstGrapheme(parts[0]);
+  const b = firstGrapheme(parts[parts.length - 1]);
+  return (a + b).toUpperCase() || '?';
 }
 
 function hueFor(name: string): number {
@@ -114,17 +133,23 @@ function qrSvg(text: string): string {
 
 // Inline icons (offline-safe, zero network font requests)
 const ico = {
-  camera: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
-  search: '<svg class="ico ico-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
-  plus: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
-  qr: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v3M14 20h6M20 20v.01"/></svg>',
-  upload: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
-  eye: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>',
-  shield: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
-  clock: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>',
-  expand: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>',
-  back: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
-  lock: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+  camera: '<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
+  search: '<svg class="ico ico-search" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
+  plus: '<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  qr: '<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v3M14 20h6M20 20v.01"/></svg>',
+  upload: '<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
+  eye: '<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>',
+  eyeOff: '<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>',
+  shield: '<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  clock: '<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>',
+  expand: '<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>',
+  back: '<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
+  lock: '<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+  home: '<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
+  check: '<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+  alert: '<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+  close: '<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  edit: '<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
 };
 
 const TEMPLATES: Array<{ label: string; note: string }> = [
@@ -161,96 +186,98 @@ function render() {
   else body = viewHome();
 
   const licActive = s.license ? licenseActive(s.license) : false;
+  const showTopbar = !s.loaded || !!s.session;
   app.innerHTML = `
-    <header class="topbar">
-      <div class="brand">
-        <img src="/logo-wide.png" alt="patnub.ai" width="124" height="40" />
-        <span class="brand-sub">Clinic</span>
-        ${s.license ? `<span class="clinic-label">${esc(s.license.body.clinic_name)}</span>` : ''}
-      </div>
+    ${showTopbar ? `<header class="topbar">
+      ${s.session ? `
+        <button type="button" class="brand brand-btn" data-action="home" title="Return to clinic overview">
+          <img src="/logo-wide.png" alt="patnub.ai" width="124" height="40" />
+          <span class="brand-sub">Clinic</span>
+          ${s.license ? `<span class="clinic-label" title="${esc(s.license.body.clinic_name)}">${esc(s.license.body.clinic_name)}</span>` : ''}
+        </button>
+      ` : `
+        <div class="brand">
+          <img src="/logo-wide.png" alt="patnub.ai" width="124" height="40" />
+          <span class="brand-sub">Clinic</span>
+        </div>
+      `}
       ${!navigator.onLine ? '<span class="pill pill-off">Offline</span>' : ''}
       ${s.license && !licActive ? '<span class="pill pill-bad">License expired</span>' : ''}
       <span class="grow"></span>
       ${s.session ? `
         ${s.panel === 'admin' ? `
           <span class="pill ${s.adminKey ? 'pill-off' : ''}">${ico.lock} ${s.adminKey ? 'Admin unlocked · auto-locks 2m' : 'Admin verification required'}</span>
-          <button class="btn btn-sm btn-soft" data-action="exit-admin">${ico.back} Back to patients</button>
+          <button type="button" class="btn btn-sm btn-soft" data-action="exit-admin">${ico.back} Back to patients</button>
         ` : s.session.canAdmin ? `
-          <button class="btn btn-sm btn-ghost" data-action="open-admin" title="Requires admin passcode">${ico.lock} Clinic admin</button>
+          <button type="button" class="btn btn-sm btn-ghost" data-action="open-admin" title="Requires admin passcode">${ico.lock} Clinic admin</button>
         ` : ''}
-        <span class="user-chip">
+        <button type="button" class="user-chip user-chip-btn" data-action="open-profile" aria-label="Edit profile and passcode" title="Edit profile &amp; passcode">
           ${avatarHtml(s.session.staff.body.name, 'sm')}
           <span class="who">${esc(by(s.session.staff))}</span>
-        </span>
-        <button class="btn btn-sm" data-action="sign-out" title="Lock workstation">${ico.lock} Lock</button>
+          ${ico.edit}
+        </button>
+        <button type="button" class="btn btn-sm" data-action="sign-out" title="Lock workstation">${ico.lock} Lock</button>
       ` : ''}
-    </header>
+    </header>` : ''}
     ${body}
-    ${s.pendingCheckIn ? viewCheckInConfirm(s.pendingCheckIn) : ''}`;
+    ${s.pendingCheckIn ? viewCheckInConfirm(s.pendingCheckIn) : s.profileOpen && s.session ? viewProfileModal(s.session) : ''}`;
 
+  syncSegmentedPill(app.querySelector('.modal .seg') ?? app.querySelector('.seg'));
   const sheet = app.querySelector<HTMLElement>('.modal .card');
   const backdrop = app.querySelector<HTMLElement>('.modal');
+  const modalOpen = Boolean(sheet && backdrop);
   if (sheet && backdrop) {
     modalDragCleanup = attachDragDismiss({
       sheet,
       backdrop,
+      animateEntrance: !prevModalOpen,
       onDismiss: () => {
-        st.pendingCheckIn = undefined;
-        render();
+        if (st.pendingCheckIn) {
+          st.pendingCheckIn = undefined;
+          render();
+        } else {
+          closeProfileModal();
+        }
       },
     });
   }
+  prevModalOpen = modalOpen;
   focusOnViewChange();
 }
 
 // Move focus to the screen's first field only when the screen changes, never on every render.
 let lastView = '';
 function focusOnViewChange() {
-  const view = [st.loaded, !!st.license, st.staff.length > 0, !!st.session, st.panel, !!st.adminKey, st.selected?.id, st.stage, !!st.pendingCheckIn].join('|');
+  const view = [st.loaded, !!st.license, st.staff.length > 0, !!st.session, st.panel, !!st.adminKey, st.selected?.id, st.stage, !!st.pendingCheckIn, st.profileOpen, st.profileTab, st.editingStaffId].join('|');
   if (view === lastView) return;
   lastView = view;
   app.querySelector<HTMLElement>('[data-autofocus]')?.focus();
 }
 
+function closeProfileModal() {
+  st.profileOpen = false;
+  render();
+  profileTrigger?.focus();
+  profileTrigger = null;
+}
+
 function authShell(cardHtml: string) {
+  const licActive = st.license ? licenseActive(st.license) : true;
+  const statusPills = [
+    !navigator.onLine ? '<span class="pill pill-off">Offline</span>' : '',
+    st.license && !licActive ? '<span class="pill pill-bad">License expired</span>' : '',
+  ].filter(Boolean).join('');
   return `<div class="auth-shell">
     <aside class="auth-stage">
-      <div>
+      <div class="stage-inner">
         <div class="stage-brand">
           <img class="stage-logo" src="/logo-wide.png" alt="patnub.ai" width="152" height="48" />
           <span class="stage-sub">Clinic</span>
+          ${statusPills ? `<div class="stage-pills">${statusPills}</div>` : ''}
         </div>
-        <h2>Clinical records that travel safely on the patient’s phone.</h2>
-        <p class="lead">Write consultations naturally in English or Taglish. patnub turns your approved summary into an encrypted QR code that opens only on that patient’s device.</p>
+        <h2>Send visit notes straight to your patient’s phone.</h2>
+        <p class="lead">Write your note in English or Taglish. Once you review and sign it, patnub seals the summary in a QR code that opens only on that patient’s phone.</p>
       </div>
-      <div class="stage-preview" aria-hidden="true">
-        <div class="stage-preview-head">
-          <span>Offline visit workflow</span>
-          <span>No internet required</span>
-        </div>
-        <div class="pipeline-steps">
-          <div class="pipe-card">
-            <span class="pipe-num">01 · CHECK-IN</span>
-            <b>Scan patient phone</b>
-            <span>Pairs their X25519 key in one second via camera.</span>
-          </div>
-          <div class="pipe-card">
-            <span class="pipe-num">02 · VERIFY</span>
-            <b>Structured draft</b>
-            <span>Extracts meds, instructions &amp; warning signs for sign-off.</span>
-          </div>
-          <div class="pipe-card">
-            <span class="pipe-num">03 · SHARE</span>
-            <b>Sealed QR code</b>
-            <span>24-hour signed record readable only on their phone.</span>
-          </div>
-        </div>
-      </div>
-      <ul class="guarantees">
-        <li>${ico.shield}<strong>Local storage</strong><span>Records stay in this browser and work offline in any RHU.</span></li>
-        <li>${ico.qr}<strong>Device-locked</strong><span>Other phones cannot decrypt or alter the QR payload.</span></li>
-        <li>${ico.clock}<strong>Clinician-approved</strong><span>Raw clinical notes never leave this device—only approved fields.</span></li>
-      </ul>
     </aside>
     <div class="auth-panel"><div class="auth-inner">${cardHtml}</div></div>
   </div>`;
@@ -258,8 +285,8 @@ function authShell(cardHtml: string) {
 
 function passwordInput(name: string, attrs = '') {
   return `<div class="pw-wrap">
-    <input name="${name}" type="password" ${attrs}>
-    <button type="button" class="pw-eye" data-toggle-pw aria-label="Show passcode" title="Show or hide passcode">${ico.eye}</button>
+    <input name="${name}" type="password" autocapitalize="none" autocorrect="off" spellcheck="false" ${attrs}>
+    <button type="button" class="pw-eye" data-toggle-pw aria-pressed="false" aria-label="Show passcode" title="Show or hide passcode">${ico.eye}</button>
   </div>`;
 }
 
@@ -267,11 +294,11 @@ function viewActivate() {
   return authShell(`
     <div class="setup-rail"><span class="on">1 · Clinic license</span><i></i><span>2 · First clinician</span></div>
     <h2>Activate this clinic</h2>
-    <p class="muted">Drop or choose the signed license file patnub issued for your clinic. This only needs to be done once on this device.</p>
+    <p class="muted">Choose or drop the signed license file from patnub. You only need to do this once on this device.</p>
     <label class="dropzone" data-drop="license">
       <span class="dropzone-icon">${ico.upload}</span>
       <b>Drop license.json here, or click to browse</b>
-      <span>Verified offline against the patnub root key</span>
+      <span>Checked offline against the patnub root key</span>
       <input type="file" accept=".json,application/json" data-change="license-file">
     </label>
     <details><summary>Restore from an encrypted backup instead</summary>${backupImportForm()}</details>
@@ -280,10 +307,10 @@ function viewActivate() {
 
 function clinicianFields(prefix = '') {
   return `
-    <label>Full name<input name="name" required autocomplete="off" placeholder="Dr. Maria Santos" data-autofocus></label>
+    <label>Full name<input name="name" required autocomplete="off" autocapitalize="words" placeholder="Dr. Maria Santos" data-autofocus></label>
     <div class="grid2">
-      <label>Profession<input name="profession" placeholder="MD, RN, RM" required></label>
-      <label>PRC license no.<input name="license_no" placeholder="0123456" required></label>
+      <label>Profession<input name="profession" autocapitalize="characters" placeholder="MD, RN, RM" required></label>
+      <label>PRC license no.<input name="license_no" inputmode="numeric" autocapitalize="none" autocorrect="off" placeholder="0123456" required></label>
     </div>
     <div class="grid2">
       <label>${prefix}Passcode${passwordInput('passcode', 'required minlength="6" autocomplete="new-password"')}</label>
@@ -295,7 +322,7 @@ function viewFirstAdmin() {
   return authShell(`<form data-form="first-admin">
     <div class="setup-rail"><span class="done">✓ License verified</span><i></i><span class="on">2 · First clinician</span></div>
     <h2>Create the first clinician</h2>
-    <p class="muted">This account is also the clinic admin for <b>${esc(st.license?.body.clinic_name ?? '')}</b>. It can add staff and export backups.</p>
+    <p class="muted">This account is also the clinic admin for <b>${esc(st.license?.body.clinic_name ?? '')}</b>, so you can add staff and export backups.</p>
     ${clinicianFields()}
     <div class="actions"><button class="btn btn-primary block" data-busy="Creating account…">Create account &amp; continue</button></div>
   </form>`);
@@ -305,8 +332,8 @@ function viewSignIn() {
   const active = st.staff.filter((x) => !x.disabled);
   return authShell(`<form data-form="sign-in">
     <h2>Sign in to ${esc(st.license?.body.clinic_name ?? 'Clinic')}</h2>
-    <p class="muted">Select your profile and enter your local passcode to unlock clinic records.</p>
-    ${st.lockedFrom ? '<p class="note">Signed out automatically after 10 minutes of inactivity to protect patient privacy on this shared device.</p>' : ''}
+    <p class="muted">Pick your name and enter your passcode to open clinic records.</p>
+    ${st.lockedFrom ? '<p class="note">Signed out after 10 minutes without activity to protect patient privacy on this shared device.</p>' : ''}
     <label>Clinician<select name="staff_id">${active.map((x) => `<option value="${esc(x.staff_id)}" ${x.staff_id === st.lockedFrom ? 'selected' : ''}>${esc(by(x))}</option>`).join('')}</select></label>
     <label>Passcode${passwordInput('passcode', 'required autocomplete="current-password" data-autofocus')}</label>
     <div class="actions"><button class="btn btn-primary block" data-busy="Unlocking…">Unlock workspace</button></div>
@@ -323,33 +350,43 @@ function countByPatient(records: ClinicRecord[]): Map<string, number> {
 
 function viewHome() {
   const counts = countByPatient(st.allRecords);
+  const onOverview = st.panel === 'patient' && !st.selected;
+  const visibleMatches = st.patients.filter(matches).length;
   return `<div class="workspace">
     <aside class="sidebar">
-      <button class="btn btn-primary block" data-action="scan">${ico.camera} Check in patient</button>
+      <button type="button" class="btn btn-primary block" data-action="scan">${ico.camera} Check in patient</button>
+      <button type="button" class="nav-row ${onOverview ? 'sel' : ''}" data-action="home" ${onOverview ? 'aria-current="page"' : ''}>
+        ${ico.home}<span>Clinic overview</span>
+      </button>
       <div class="search-box">
         ${ico.search}
-        <input type="search" placeholder="Find patient…" value="${esc(st.query)}" data-input="search" aria-label="Search patients">
+        <input type="search" placeholder="Find patient or barangay…" value="${esc(st.query)}" data-input="search" enterkeyhint="search" aria-label="Search patients">
         <span class="kbd-hint" aria-hidden="true">/</span>
         <button type="button" class="search-clear" data-action="clear-search" aria-label="Clear search">×</button>
       </div>
       <div class="side-head">
         <span class="eyebrow">Patients</span>
-        <span class="count-badge">${st.patients.length}</span>
+        <span class="count-badge" id="patient-count-badge">${fmtNum(st.query ? visibleMatches : st.patients.length)}</span>
       </div>
       ${st.patients.length ? '' : '<p class="muted small" style="padding:4px 4px 0">No patients checked in yet. Ask a patient to open patnub › Scan, then click <b>Check in patient</b>.</p>'}
       <ul class="patient-list" id="patients">${st.patients.map((p) => {
         const n = counts.get(p.id) ?? 0;
-        return `<li data-name="${esc(p.name.toLowerCase())}" ${matches(p) ? '' : 'hidden'}>
-          <button class="pt-row ${st.selected?.id === p.id ? 'sel' : ''}" data-action="select" data-id="${esc(p.id)}" ${st.selected?.id === p.id ? 'aria-current="true"' : ''}>
+        const sel = st.panel === 'patient' && st.selected?.id === p.id;
+        return `<li data-patient-id="${esc(p.id)}" ${matches(p) ? '' : 'hidden'}>
+          <button type="button" class="pt-row ${sel ? 'sel' : ''}" data-action="select" data-id="${esc(p.id)}" title="${esc(p.name)}" ${sel ? 'aria-current="true"' : ''}>
             ${avatarHtml(p.name, 'md')}
             <span class="pt-meta">
               <b>${esc(p.name)}</b>
               <span>${esc(p.age)} yrs${p.brgy ? ` · ${esc(p.brgy)}` : ''}</span>
             </span>
-            ${n > 0 ? `<span class="pt-count" title="${n} issued record(s)">${n}</span>` : ''}
+            ${n > 0 ? `<span class="pt-count" title="${n} issued ${plural(n, 'record')}">${n}</span>` : ''}
           </button>
         </li>`;
       }).join('')}</ul>
+      <div class="search-empty" id="patients-empty" ${st.patients.length > 0 && visibleMatches === 0 ? '' : 'hidden'}>
+        <p class="muted small">No patients match “<b id="patients-empty-q">${esc(st.query)}</b>”.</p>
+        <button type="button" class="btn btn-sm" data-action="clear-search">Clear search</button>
+      </div>
       ${DEBUG ? `<details class="paste"><summary>Paste check-in code (debug)</summary>
         <form data-form="paste-checkin"><textarea name="code" rows="3" placeholder="PATNUB:CI1:..."></textarea><button class="btn btn-sm block">Read code</button></form>
       </details>` : ''}
@@ -364,44 +401,48 @@ function viewDashboard() {
   const todayCount = issued.filter((r) => r.copy.encounter_date === todayIso).length;
   const validQrs = issued.filter((r) => qrValid(r)).length;
   const licDays = st.license ? daysLeft(st.license.body.exp) : 0;
+  const activeClinicians = st.staff.filter((x) => !x.disabled).length;
   const latestByPatient = new Map<string, ClinicRecord>();
   for (const r of issued) {
     if (!latestByPatient.has(r.patient_id)) latestByPatient.set(r.patient_id, r);
   }
-  const recentPatients = st.patients.slice(0, 5);
+  const recentPatients = [...st.patients]
+    .sort((a, b) => (latestByPatient.get(b.id)?.created_at ?? b.created_at) - (latestByPatient.get(a.id)?.created_at ?? a.created_at))
+    .slice(0, 5);
+  const leadPatient = recentPatients[0];
 
   return `
     <section class="dash-hero">
       <div>
         <span class="eyebrow">${esc(st.license?.body.clinic_name ?? 'Clinic')} · ${esc(fmtDay(todayIso))}</span>
         <h2>${greeting()}, ${esc(st.session!.staff.body.name)}</h2>
-        <p>${st.patients.length ? 'Select a patient from the sidebar to review their chart, or check in a new patient via QR.' : 'Your workstation is ready. Scan a patient’s check-in QR from their phone to start their first record.'}</p>
+        <p>${st.patients.length ? 'Pick a patient from the sidebar to open their chart, or check in someone new.' : 'Ready to start. Scan a patient’s check-in code from their phone to create their first record.'}</p>
       </div>
       <div class="dash-actions">
-        <button class="btn btn-primary" data-action="scan">${ico.camera} Check in patient</button>
-        ${st.patients[0] ? `<button class="btn btn-soft" data-action="select" data-id="${esc(st.patients[0].id)}">Open ${esc(st.patients[0].name)}</button>` : ''}
+        <button type="button" class="btn btn-primary" data-action="scan">${ico.camera} Check in patient</button>
+        ${leadPatient ? `<button type="button" class="btn btn-soft btn-open-pt" data-action="select" data-id="${esc(leadPatient.id)}" title="Open ${esc(leadPatient.name)}"><span>Open ${esc(leadPatient.name)}</span></button>` : ''}
       </div>
     </section>
 
     <section class="kpi-grid" aria-label="Clinic summary">
       <div class="kpi stagger" style="--i:0">
         <span class="eyebrow">Patients on device</span>
-        <span class="kpi-val">${st.patients.length}</span>
-        <span class="kpi-sub">${st.staff.filter((x) => !x.disabled).length} active clinician(s)</span>
+        <span class="kpi-val">${fmtNum(st.patients.length)}</span>
+        <span class="kpi-sub">${fmtNum(activeClinicians)} active ${plural(activeClinicians, 'clinician')}</span>
       </div>
       <div class="kpi stagger" style="--i:1">
         <span class="eyebrow">Issued today</span>
-        <span class="kpi-val">${todayCount}</span>
-        <span class="kpi-sub">${issued.length} total approved record(s)</span>
+        <span class="kpi-val">${fmtNum(todayCount)}</span>
+        <span class="kpi-sub">${fmtNum(issued.length)} total approved ${plural(issued.length, 'record')}</span>
       </div>
       <div class="kpi stagger" style="--i:2">
         <span class="eyebrow">Active QR codes</span>
-        <span class="kpi-val">${validQrs}</span>
+        <span class="kpi-val">${fmtNum(validQrs)}</span>
         <span class="kpi-sub">24-hour patient scan window</span>
       </div>
       <div class="kpi stagger" style="--i:3">
         <span class="eyebrow">Clinic license</span>
-        <span class="kpi-val">${licDays}d</span>
+        <span class="kpi-val">${fmtNum(licDays)}d</span>
         <span class="kpi-sub">${st.license && licenseActive(st.license) ? `Valid until ${new Date(st.license.body.exp * 1000).toLocaleDateString()}` : 'Renewal needed'}</span>
       </div>
     </section>
@@ -415,7 +456,7 @@ function viewDashboard() {
         ${recentPatients.length ? `
           <ul class="quick-list">${recentPatients.map((p) => {
             const last = latestByPatient.get(p.id);
-            return `<li><button class="quick-item" data-action="select" data-id="${esc(p.id)}">
+            return `<li><button type="button" class="quick-item" data-action="select" data-id="${esc(p.id)}" title="${esc(p.name)}">
               ${avatarHtml(p.name, 'md')}
               <span class="qi-main">
                 <b>${esc(p.name)}</b>
@@ -426,9 +467,9 @@ function viewDashboard() {
           }).join('')}</ul>
         ` : `
           <ol class="flow-steps">
-            <li><span class="step-num">1</span><div><b>Scan check-in QR</b><br><span class="small muted">Patient opens patnub › Scan on their phone. Camera pairs their public key in one second.</span></div></li>
-            <li><span class="step-num">2</span><div><b>Write note &amp; verify fields</b><br><span class="small muted">Type naturally in English or Taglish. Review extracted medicines, instructions, and red flags.</span></div></li>
-            <li><span class="step-num">3</span><div><b>Show encrypted QR</b><br><span class="small muted">Patient scans the QR back onto their phone—completely offline.</span></div></li>
+            <li><span class="step-num">1</span><div><b>Scan check-in QR</b><br><span class="small muted">The patient opens patnub › Scan on their phone, and the camera reads their public key.</span></div></li>
+            <li><span class="step-num">2</span><div><b>Write note &amp; verify fields</b><br><span class="small muted">Type in English or Taglish, then check the medicines, instructions, and warning signs.</span></div></li>
+            <li><span class="step-num">3</span><div><b>Show encrypted QR</b><br><span class="small muted">The patient scans the QR code back onto their phone. No internet needed.</span></div></li>
           </ol>
         `}
       </div>
@@ -441,7 +482,7 @@ function viewDashboard() {
         ${st.auditLog.length ? `
           <ul class="audit-list">${st.auditLog.slice(0, 6).map((a) => `
             <li class="audit-row">
-              <span><b>${esc(formatAuditAction(a.action))}</b>${a.details ? ` <span class="muted">· ${esc(a.details)}</span>` : ''}</span>
+              <span class="audit-main"><i class="audit-dot ${auditTone(a.action)}" aria-hidden="true"></i><span><b>${esc(formatAuditAction(a.action))}</b>${a.details ? ` <span class="muted">· ${esc(a.details)}</span>` : ''}</span></span>
               <time>${esc(fmtRelTime(a.at))}</time>
             </li>`).join('')}</ul>
         ` : '<p class="muted small">Activity will appear here as clinicians sign in, check in patients, and issue records.</p>'}
@@ -449,11 +490,21 @@ function viewDashboard() {
     </section>`;
 }
 
+function auditTone(action: string): string {
+  if (action.includes('FAILED')) return 'bad';
+  if (action.includes('ISSUED') || action.includes('ACTIVATED') || action.includes('CREATED') || action.includes('CHECKED_IN')) return 'ok';
+  return '';
+}
+
 function formatAuditAction(action: string): string {
   return action.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-const matches = (p: Patient) => !st.query || p.name.toLowerCase().includes(st.query.toLowerCase());
+const matches = (p: Patient) => {
+  const q = st.query.trim().toLowerCase();
+  if (!q) return true;
+  return p.name.toLowerCase().includes(q) || (p.brgy ?? '').toLowerCase().includes(q);
+};
 
 function viewPatient(p: Patient) {
   const steps = ['Write note', 'Review draft', 'Share QR'];
@@ -490,13 +541,27 @@ function viewHistory() {
 
 function historyList() {
   if (!st.records.length) {
-    return `<div style="padding:28px 12px;text-align:center">
-      <h3>No consultations recorded yet</h3>
-      <p class="muted small" style="max-width:40ch;margin:6px auto 16px">Start a consultation to write a clinical note and issue an encrypted QR summary for ${esc(st.selected!.name)}.</p>
-      <button class="btn btn-primary" data-action="new-consult" ${licenseActive(st.license!) ? '' : 'disabled'}>${ico.plus} Start first consultation</button>
+    return `<div class="empty-chart">
+      <h3>No visits yet</h3>
+      <p class="muted small">Write a consultation note to create an encrypted QR summary for ${esc(st.selected!.name)}.</p>
+      <button type="button" class="btn btn-primary" data-action="new-consult" ${licenseActive(st.license!) ? '' : 'disabled'}>${ico.plus} Start first consultation</button>
     </div>`;
   }
-  return `<ul class="rec-list">${st.records.map((r) => {
+  const hasSuperseded = st.records.some((r) => r.status === 'SUPERSEDED');
+  const currentCount = st.records.filter((r) => r.status === 'ISSUED').length;
+  const shownRecords = hasSuperseded && st.historyFilter === 'current'
+    ? st.records.filter((r) => r.status === 'ISSUED')
+    : st.records;
+  const filterBar = hasSuperseded ? `<div class="history-toolbar">
+    <span class="eyebrow">Consultations</span>
+    <div class="seg" role="tablist" aria-label="Filter consultation versions" data-seg-group="history-${esc(st.selected!.id)}">
+      <span class="seg-pill" aria-hidden="true"></span>
+      <button type="button" class="seg-btn" role="tab" aria-selected="${st.historyFilter === 'all'}" data-action="history-filter" data-filter="all">All (${fmtNum(st.records.length)})</button>
+      <button type="button" class="seg-btn" role="tab" aria-selected="${st.historyFilter === 'current'}" data-action="history-filter" data-filter="current">Current (${fmtNum(currentCount)})</button>
+    </div>
+  </div>` : '';
+
+  return `${filterBar}<ul class="rec-list">${shownRecords.map((r) => {
     const valid = r.status === 'ISSUED' && qrValid(r);
     const badgeClass = r.status === 'SUPERSEDED' ? '' : valid ? 'tag-ok' : 'tag-warn';
     const badgeText = r.status === 'SUPERSEDED' ? 'Replaced' : valid ? `QR valid · ${timeLeft(r.copy.exp)}` : 'QR expired';
@@ -513,46 +578,61 @@ function historyList() {
         ${r.copy.instructions.length ? `<ul class="rec-lines">${r.copy.instructions.map((ins) => `<li>${esc(ins)}</li>`).join('')}</ul>` : ''}
         ${r.copy.warnings.length ? `<div class="chip-row">${r.copy.warnings.map((w) => `<span class="warn-chip">Seek care: ${esc(w)}</span>`).join('')}</div>` : ''}
         ${r.copy.follow_up ? `<div class="small muted"><b>Follow-up:</b> ${esc(r.copy.follow_up)}</div>` : ''}
+        ${r.raw_note ? `<details class="raw-note"><summary>Original clinical note (local only)</summary><p>${esc(r.raw_note)}</p></details>` : ''}
       </div>
       ${r.status === 'ISSUED' ? `<div class="rec-foot">
         <span class="xs muted">Encrypted to patient’s current phone</span>
         <div class="actions" style="margin-top:0">
-          <button class="btn btn-sm btn-soft" data-action="show-qr" data-key="${esc(r.key)}" data-busy="Preparing…">${ico.qr} ${valid ? 'Show QR' : 'Make new QR'}</button>
-          <button class="btn btn-sm" data-action="correct" data-key="${esc(r.key)}">Correct</button>
+          <button type="button" class="btn btn-sm btn-soft" data-action="show-qr" data-key="${esc(r.key)}" data-busy="Preparing…">${ico.qr} ${valid ? 'Show QR' : 'Make new QR'}</button>
+          <button type="button" class="btn btn-sm" data-action="correct" data-key="${esc(r.key)}">Correct</button>
         </div>
       </div>` : ''}
     </li>`;
   }).join('')}</ul>`;
 }
 
+function draftFieldCount(d: Draft): number {
+  return [Boolean(d.assessment), d.meds.length > 0, d.instructions.length > 0, d.warnings.length > 0, Boolean(d.follow_up)].filter(Boolean).length;
+}
+
 function renderDraftPreview(d: Draft): string {
-  const empty = !d.assessment && !d.meds.length && !d.instructions.length && !d.warnings.length && !d.follow_up;
-  if (empty) {
-    return `<span class="eyebrow">Live field preview</span>
-      <p class="muted small" style="margin:0">Start typing your clinical note on the left—or tap a quick template—to preview the structured fields patnub will draft for review.</p>`;
+  const count = draftFieldCount(d);
+  if (count === 0) {
+    return `<div class="preview-head"><span class="eyebrow">Live field preview</span></div>
+      <p class="muted small" style="margin:0">Type your clinical note on the left, or pick a template, to preview how patnub organizes it.</p>`;
   }
-  return `<span class="eyebrow">Live field preview</span>
-    <div class="preview-field"><span class="xs muted">Assessment</span><strong>${esc(d.assessment || '—')}</strong></div>
+  return `<div class="preview-head">
+      <span class="eyebrow">Live field preview</span>
+      <span class="tag tag-ok">${count} of 5 fields</span>
+    </div>
+    <div class="preview-field"><span class="xs muted">Assessment</span><strong>${esc(d.assessment || 'Not detected yet')}</strong></div>
     <div class="preview-field"><span class="xs muted">Medicines (${d.meds.length})</span>
-      ${d.meds.length ? `<div class="chip-row">${d.meds.map((m) => `<span class="med-chip">${esc(m.name)} ${esc(m.dose)}</span>`).join('')}</div>` : '<span class="small muted">None detected yet</span>'}
+      ${d.meds.length ? `<div class="chip-row">${d.meds.map((m) => `<span class="med-chip">${esc(m.name)}${m.dose ? ` ${esc(m.dose)}` : ''}</span>`).join('')}</div>` : '<span class="small muted">None detected yet</span>'}
     </div>
     <div class="preview-field"><span class="xs muted">Instructions (${d.instructions.length})</span>
-      ${d.instructions.length ? `<ul class="rec-lines">${d.instructions.slice(0, 4).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '<span class="small muted">—</span>'}
+      ${d.instructions.length ? `<ul class="rec-lines">${d.instructions.slice(0, 4).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '<span class="small muted">None detected yet</span>'}
     </div>
     <div class="preview-field"><span class="xs muted">Emergency signs (${d.warnings.length})</span>
-      ${d.warnings.length ? `<div class="chip-row">${d.warnings.map((w) => `<span class="warn-chip">${esc(w)}</span>`).join('')}</div>` : '<span class="small muted">—</span>'}
+      ${d.warnings.length ? `<div class="chip-row">${d.warnings.map((w) => `<span class="warn-chip">${esc(w)}</span>`).join('')}</div>` : '<span class="small muted">None detected yet</span>'}
     </div>
-    <div class="preview-field"><span class="xs muted">Follow-up</span><strong>${esc(d.follow_up || '—')}</strong></div>`;
+    <div class="preview-field"><span class="xs muted">Follow-up</span><strong>${esc(d.follow_up || 'Not specified')}</strong></div>`;
+}
+
+function correctionBanner(): string {
+  if (!st.previous) return '';
+  return `<div class="note">Correcting record <b>v${st.previous.rv}</b>. Approving will issue <b>v${st.previous.rv + 1}</b> and mark v${st.previous.rv} as Replaced.</div>`;
 }
 
 function viewWrite() {
   const initialDraft = draftFromNote(st.note);
   return `<form data-form="write" class="write-split">
     <div>
-      <p class="muted small">Write naturally in English or Taglish. Your raw note stays on this device; the patient only receives the fields you approve in the next step.</p>
+      ${correctionBanner()}
+      <p class="muted small">Write in English or Taglish. Your original note stays on this device; the patient receives only the fields you approve in the next step.</p>
       <div class="tpl-row">
         <span class="xs muted" style="font-weight:650">Templates:</span>
-        ${TEMPLATES.map((t, i) => `<button type="button" class="tpl-chip" data-action="template" data-tpl="${i}">${esc(t.label)}</button>`).join('')}
+        ${TEMPLATES.map((t, i) => `<button type="button" class="tpl-chip" data-action="template" data-tpl="${i}" aria-pressed="${st.note === t.note}">${esc(t.label)}</button>`).join('')}
+        <button type="button" class="tpl-clear" id="clear-note-btn" data-action="clear-note" ${st.note.trim() ? '' : 'hidden'}>Clear</button>
       </div>
       <textarea name="note" rows="13" required data-autofocus data-input="note" placeholder="e.g. BP 150/95. Assessment: Stage 1 hypertension. Start Amlodipine 5 mg once daily in the morning…">${esc(st.note)}</textarea>
       <div class="actions"><button class="btn btn-primary">Review structured fields →</button></div>
@@ -562,7 +642,7 @@ function viewWrite() {
 }
 
 function medRow(m: { name: string; dose: string; freq: string }) {
-  return `<div class="med"><input name="med_name" value="${esc(m.name)}" placeholder="Medicine" aria-label="Medicine"><input name="med_dose" value="${esc(m.dose)}" placeholder="Dose" aria-label="Dose"><input name="med_freq" value="${esc(m.freq)}" placeholder="How often" aria-label="How often"><button type="button" class="btn btn-sm" data-action="remove-med" aria-label="Remove medicine">×</button></div>`;
+  return `<div class="med"><input name="med_name" value="${esc(m.name)}" placeholder="Medicine" aria-label="Medicine"><input name="med_dose" value="${esc(m.dose)}" placeholder="Dose" aria-label="Dose"><input name="med_freq" value="${esc(m.freq)}" placeholder="How often" aria-label="How often"><button type="button" class="btn btn-sm" data-action="remove-med" aria-label="Remove medicine" title="Remove medicine">×</button></div>`;
 }
 
 function viewReview() {
@@ -574,7 +654,8 @@ function viewReview() {
       <button type="button" class="btn btn-sm" data-action="back-write">${ico.back} Edit note</button>
     </aside>
     <div class="fields">
-      <div class="banner">${ico.shield}<span>Drafted from your note by simple rules. Verify every field before signing—the patient’s assistant treats this as your instruction.</span></div>
+      ${correctionBanner()}
+      <div class="banner">${ico.shield}<span>Drafted by simple rules. Check each field before signing, because the patient’s assistant uses this as your instruction.</span></div>
       <div class="grid2">
         <label>Encounter date<input type="date" name="encounter_date" value="${esc(st.encounterDate)}" required></label>
         <label>Assessment<input name="assessment" value="${esc(d.assessment)}" data-autofocus></label>
@@ -582,6 +663,7 @@ function viewReview() {
       <fieldset>
         <legend>Medicines</legend>
         <div id="meds">${d.meds.map(medRow).join('')}</div>
+        <p class="muted small" id="meds-empty" ${d.meds.length ? 'hidden' : ''} style="margin:2px 0 10px">No medicines listed. Add one below if prescribed.</p>
         <button type="button" class="btn btn-sm btn-soft" data-action="add-med">${ico.plus} Add medicine</button>
       </fieldset>
       <div class="grid2">
@@ -599,7 +681,10 @@ function viewReview() {
 
 function viewQr(r: ClinicRecord) {
   return `<div class="qr-wrap">
-    <div class="qr-card" data-action="present" role="button" tabindex="0" aria-label="Show QR code full screen">${qrSvg(r.qr)}</div>
+    <div class="qr-card" data-action="present" role="button" tabindex="0" aria-label="Show QR code full screen">
+      ${qrSvg(r.qr)}
+      <span class="qr-hint xs muted">${ico.expand} Tap or press Enter to enlarge</span>
+    </div>
     <div>
       <span class="tag tag-ok">Signed &amp; encrypted</span>
       <h3 style="margin-top:8px;font-size:1.3125rem">Ready for ${esc(st.selected!.name)}</h3>
@@ -610,8 +695,8 @@ function viewQr(r: ClinicRecord) {
         <li>${ico.qr}<span>Record <b>v${r.rv}</b> · signed by ${esc(by(st.session!.staff))}</span></li>
       </ul>
       <div class="actions start">
-        <button class="btn btn-primary" data-action="present">${ico.expand} Present full screen</button>
-        <button class="btn" data-action="history">Done</button>
+        <button type="button" class="btn btn-primary" data-action="present">${ico.expand} Present full screen</button>
+        <button type="button" class="btn" data-action="history">Done</button>
       </div>
     </div>
   </div>`;
@@ -638,11 +723,75 @@ function viewCheckInConfirm(c: CheckInResult) {
   </div>`;
 }
 
+function viewProfileModal(s: Session) {
+  const staff = s.staff;
+  const tab = st.profileTab;
+  return `<div class="modal" role="dialog" aria-modal="true" aria-label="Clinician profile">
+    <div class="card profile-modal">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="profile-head">
+        <div class="profile-id">
+          ${avatarHtml(staff.body.name, 'lg')}
+          <div>
+            <h3>${esc(staff.body.name)}</h3>
+            <div class="rec-sub">${esc(staff.body.profession)} · PRC ${esc(staff.body.license_no)}${staff.is_admin ? ' · Clinic admin' : ''}</div>
+          </div>
+        </div>
+        <button type="button" class="btn btn-sm btn-ghost profile-close" data-action="close-profile" aria-label="Close profile">${ico.close}</button>
+      </div>
+      <div class="seg seg-full" role="tablist" aria-label="Profile sections" data-seg-group="profile-modal">
+        <span class="seg-pill" aria-hidden="true"></span>
+        <button type="button" class="seg-btn" role="tab" aria-selected="${tab === 'profile'}" data-action="profile-tab" data-tab="profile">Profile details</button>
+        <button type="button" class="seg-btn" role="tab" aria-selected="${tab === 'passcode'}" data-action="profile-tab" data-tab="passcode">Change passcode</button>
+      </div>
+      ${tab === 'profile' ? (s.canAdmin ? `
+        <form data-form="profile-save">
+          <label>Full name<input name="name" value="${esc(staff.body.name)}" required autocomplete="off" autocapitalize="words" data-autofocus></label>
+          <div class="grid2">
+            <label>Profession<input name="profession" value="${esc(staff.body.profession)}" autocapitalize="characters" required></label>
+            <label>PRC license no.<input name="license_no" value="${esc(staff.body.license_no)}" inputmode="numeric" autocapitalize="none" autocorrect="off" required></label>
+          </div>
+          <label>Current passcode${passwordInput('passcode', 'required autocomplete="current-password"')}</label>
+          <p class="xs muted" style="margin:-4px 0 0">Needed to re-sign your clinician certificate for QR codes.</p>
+          <div class="actions">
+            <button type="button" class="btn" data-action="close-profile">Cancel</button>
+            <button class="btn btn-primary" data-busy="Saving…">Save profile</button>
+          </div>
+        </form>
+      ` : `
+        <div class="profile-readonly">
+          <div class="profile-kv"><span>Full name</span><b>${esc(staff.body.name)}</b></div>
+          <div class="profile-kv"><span>Profession</span><b>${esc(staff.body.profession)}</b></div>
+          <div class="profile-kv"><span>PRC license no.</span><b>${esc(staff.body.license_no)}</b></div>
+        </div>
+        <div class="banner" style="margin-top:12px">${ico.shield}<span>Your name, profession, and PRC license number are signed onto QR codes by a clinic admin. Ask an admin to update them under Clinic admin.</span></div>
+        <div class="actions">
+          <button type="button" class="btn" data-action="close-profile">Close</button>
+          <button type="button" class="btn btn-primary" data-action="profile-tab" data-tab="passcode" data-autofocus>Change passcode</button>
+        </div>
+      `) : `
+        <form data-form="change-passcode">
+          <label>Current passcode${passwordInput('current_passcode', 'required autocomplete="current-password" data-autofocus')}</label>
+          <div class="grid2">
+            <label>New passcode${passwordInput('new_passcode', 'required minlength="6" autocomplete="new-password"')}</label>
+            <label>Repeat new passcode${passwordInput('confirm', 'required autocomplete="new-password"')}</label>
+          </div>
+          <p class="xs muted" style="margin:-4px 0 0">At least 6 characters. Your signing key stays encrypted on this device.</p>
+          <div class="actions">
+            <button type="button" class="btn" data-action="close-profile">Cancel</button>
+            <button class="btn btn-primary" data-busy="Updating…">Update passcode</button>
+          </div>
+        </form>
+      `}
+    </div>
+  </div>`;
+}
+
 function viewAdminGate() {
   return `<div class="card admin-gate">
     <div class="admin-gate-icon">${ico.lock}</div>
     <h2>Verify admin passcode</h2>
-    <p class="muted">Clinic administration (staff accounts, audit log, backups, and device reset) is separated from patient care and auto-locks after 2 minutes of inactivity.</p>
+    <p class="muted">Staff accounts, backups, audit logs, and device reset stay separate from patient charts and lock again after 2 minutes without activity.</p>
     <form data-form="admin-unlock">
       <label>Admin passcode for ${esc(st.session!.staff.body.name)}${passwordInput('passcode', 'required autocomplete="current-password" data-autofocus')}</label>
       <div class="actions">
@@ -660,20 +809,37 @@ function viewAdmin() {
         <h2>Clinicians</h2>
         <span class="count-badge">${st.staff.length}</span>
       </div>
-      <ul class="rec-list" style="margin-bottom:18px">${st.staff.map((x) => `<li class="rec" style="padding:12px 14px">
-        <div class="rec-head" style="align-items:center">
-          <div style="display:flex;align-items:center;gap:10px">
-            ${avatarHtml(x.body.name, 'md')}
-            <div>
-              <b>${esc(by(x))}</b>
-              <div class="rec-sub">PRC ${esc(x.body.license_no)}${x.is_admin ? ' · Admin' : ''}${x.disabled ? ' · Disabled' : ''}</div>
+      <ul class="rec-list" style="margin-bottom:18px">${st.staff.map((x) => {
+        const editing = st.editingStaffId === x.staff_id;
+        return `<li class="rec" style="padding:12px 14px">
+          <div class="rec-head" style="align-items:center">
+            <div style="display:flex;align-items:center;gap:10px;min-width:0">
+              ${avatarHtml(x.body.name, 'md')}
+              <div style="min-width:0">
+                <b>${esc(by(x))}</b>
+                <div class="rec-sub">PRC ${esc(x.body.license_no)}${x.is_admin ? ' · Admin' : ''}${x.disabled ? ' · Disabled' : ''}</div>
+              </div>
+            </div>
+            <div class="staff-actions">
+              <button type="button" class="btn btn-sm btn-ghost" data-action="edit-staff" data-id="${esc(x.staff_id)}">${editing ? 'Cancel' : 'Edit'}</button>
+              ${x.staff_id === st.session!.staff.staff_id
+                ? '<span class="tag tag-ok">You</span>'
+                : `<button type="button" class="btn btn-sm" data-action="toggle-staff" data-id="${esc(x.staff_id)}">${x.disabled ? 'Enable' : 'Disable'}</button>`}
             </div>
           </div>
-          ${x.staff_id === st.session!.staff.staff_id
-            ? '<span class="tag tag-ok">You</span>'
-            : `<button class="btn btn-sm" data-action="toggle-staff" data-id="${esc(x.staff_id)}">${x.disabled ? 'Enable' : 'Disable'}</button>`}
-        </div>
-      </li>`).join('')}</ul>
+          ${editing ? `<form data-form="admin-edit-staff" data-id="${esc(x.staff_id)}" class="staff-edit-form">
+            <label>Full name<input name="name" value="${esc(x.body.name)}" required autocomplete="off" autocapitalize="words" data-autofocus></label>
+            <div class="grid2">
+              <label>Profession<input name="profession" value="${esc(x.body.profession)}" autocapitalize="characters" required></label>
+              <label>PRC license no.<input name="license_no" value="${esc(x.body.license_no)}" inputmode="numeric" autocapitalize="none" autocorrect="off" required></label>
+            </div>
+            <div class="actions" style="margin-top:8px">
+              <button type="button" class="btn btn-sm" data-action="edit-staff" data-id="${esc(x.staff_id)}">Cancel</button>
+              <button class="btn btn-sm btn-primary" data-busy="Saving…">Save changes</button>
+            </div>
+          </form>` : ''}
+        </li>`;
+      }).join('')}</ul>
       <form data-form="add-clinician">
         <h3>Add clinician</h3>
         ${clinicianFields()}
@@ -685,7 +851,7 @@ function viewAdmin() {
     <div class="admin-stack">
       <div class="card">
         <h2>Encrypted backup</h2>
-        <p class="muted small">Everything lives only in this browser. Export an AES-GCM encrypted backup to a USB drive regularly.</p>
+        <p class="muted small">All clinic data stays in this browser. Export an encrypted backup to a USB drive on a regular schedule.</p>
         <form data-form="export">
           <label>Your passcode${passwordInput('passcode', 'required')}</label>
           <button class="btn btn-primary" data-busy="Preparing backup…">${ico.upload} Download backup</button>
@@ -696,18 +862,18 @@ function viewAdmin() {
       <div class="card">
         <div class="card-header">
           <h3>Recent audit log</h3>
-          <span class="xs muted">${st.auditLog.length} latest</span>
+          <span class="xs muted">${fmtNum(st.auditLog.length)} latest</span>
         </div>
-        ${st.auditLog.length ? `<ul class="audit-list">${st.auditLog.slice(0, 6).map((a) => `
+        ${st.auditLog.length ? `<ul class="audit-list">${st.auditLog.slice(0, 8).map((a) => `
           <li class="audit-row">
-            <span><b>${esc(formatAuditAction(a.action))}</b>${a.details ? ` <span class="muted">· ${esc(a.details)}</span>` : ''}</span>
+            <span class="audit-main"><i class="audit-dot ${auditTone(a.action)}" aria-hidden="true"></i><span><b>${esc(formatAuditAction(a.action))}</b>${a.details ? ` <span class="muted">· ${esc(a.details)}</span>` : ''}</span></span>
             <time>${esc(fmtRelTime(a.at))}</time>
           </li>`).join('')}</ul>` : '<p class="muted small">No events yet.</p>'}
       </div>
 
       <div class="card">
         <h3>Reset device</h3>
-        <p class="muted small">Deletes the license, clinicians, patients, and records from this browser. Enter your admin passcode, then hold for 1.5s to confirm.</p>
+        <p class="muted small">Removes the clinic license, staff accounts, patients, and records from this browser. Enter your admin passcode, then hold the button for 1.5 seconds.</p>
         <label>Confirm admin passcode${passwordInput('erase_passcode', 'id="erase-passcode" autocomplete="current-password"')}</label>
         <button type="button" class="btn btn-hold" data-hold-erase>
           <span>Hold 1.5s to erase everything</span>
@@ -771,25 +937,37 @@ toasts.setAttribute('aria-live', 'polite');
 document.body.append(toasts);
 
 function toast(text: string, kind: 'ok' | 'error' = 'ok') {
-  const t = Object.assign(document.createElement('div'), { className: `toast ${kind}`, textContent: text });
+  const t = document.createElement('div');
+  t.className = `toast ${kind}`;
   if (kind === 'error') t.setAttribute('role', 'alert');
+  t.innerHTML = `<span class="toast-ico">${kind === 'error' ? ico.alert : ico.check}</span><span class="toast-msg">${esc(text)}</span><button type="button" class="toast-close" aria-label="Dismiss notification">${ico.close}</button>`;
   toasts.append(t);
   let remaining = kind === 'error' ? 6000 : 3000;
   let started = Date.now();
   let timer = setTimeout(dismiss, remaining);
+  let dismissed = false;
   function dismiss() {
+    if (dismissed) return;
+    dismissed = true;
+    clearTimeout(timer);
     t.classList.add('leaving');
     t.addEventListener('transitionend', () => t.remove(), { once: true });
     setTimeout(() => t.remove(), 300);
   }
-  t.addEventListener('mouseenter', () => {
+  const pause = () => {
     clearTimeout(timer);
     remaining = Math.max(400, remaining - (Date.now() - started));
-  });
-  t.addEventListener('mouseleave', () => {
+  };
+  const resume = () => {
+    if (dismissed) return;
     started = Date.now();
     timer = setTimeout(dismiss, remaining);
-  });
+  };
+  t.querySelector('.toast-close')!.addEventListener('click', dismiss);
+  t.addEventListener('mouseenter', pause);
+  t.addEventListener('mouseleave', resume);
+  t.addEventListener('focusin', pause);
+  t.addEventListener('focusout', resume);
 }
 
 // ---------- guards & form helpers ----------
@@ -904,6 +1082,67 @@ app.addEventListener('submit', (ev) => {
       URL.revokeObjectURL(url);
       form.reset();
     }, btn, 'Backup downloaded. Keep it on a USB stick.');
+    case 'profile-save': return run(async () => {
+      if (!st.session) return;
+      const wait = profileThrottle.cooldownSeconds();
+      if (wait > 0) throw new Error(`Too many wrong passcodes. Try again in ${wait} s.`);
+      let updated: Staff;
+      try {
+        updated = await updateOwnProfile(
+          st.session.staff.staff_id,
+          { name: f('name'), profession: f('profession'), license_no: f('license_no') },
+          f('passcode'),
+        );
+      } catch (e) {
+        if (e instanceof Error && e.message === 'Wrong passcode.') {
+          const sWait = profileThrottle.recordFailure();
+          throw new Error(sWait > 0 ? `Wrong passcode. Try again in ${sWait} s.` : 'Wrong passcode.');
+        }
+        throw e;
+      }
+      profileThrottle.reset();
+      st.session = { ...st.session, staff: updated };
+      st.profileOpen = false;
+      touch();
+    }, btn, 'Profile updated.');
+    case 'change-passcode': return run(async () => {
+      if (!st.session) return;
+      const wait = profileThrottle.cooldownSeconds();
+      if (wait > 0) throw new Error(`Too many wrong passcodes. Try again in ${wait} s.`);
+      let updated: Staff;
+      try {
+        updated = await changeOwnPasscode(
+          st.session.staff.staff_id,
+          f('current_passcode'),
+          f('new_passcode'),
+          f('confirm'),
+        );
+      } catch (e) {
+        if (e instanceof Error && e.message === 'Current passcode is incorrect.') {
+          const sWait = profileThrottle.recordFailure();
+          throw new Error(sWait > 0 ? `Current passcode is incorrect. Try again in ${sWait} s.` : 'Current passcode is incorrect.');
+        }
+        throw e;
+      }
+      profileThrottle.reset();
+      st.session = { ...st.session, staff: updated };
+      st.profileOpen = false;
+      touch();
+    }, btn, 'Passcode updated.');
+    case 'admin-edit-staff': return run(async () => {
+      if (!st.adminKey) throw new Error('Unlock clinic administration first.');
+      const id = form.dataset.id!;
+      const updated = await updateStaffProfileByAdmin(
+        id,
+        { name: f('name'), profession: f('profession'), license_no: f('license_no') },
+        st.adminKey,
+        actor(),
+      );
+      if (st.session?.staff.staff_id === id) {
+        st.session = { ...st.session, staff: updated };
+      }
+      st.editingStaffId = undefined;
+    }, btn, 'Clinician profile updated.');
     case 'import': return run(async () => {
       const file = (form.elements.namedItem('file') as HTMLInputElement).files?.[0];
       if (!file) throw new Error('Choose a backup file.');
@@ -924,6 +1163,7 @@ app.addEventListener('submit', (ev) => {
 function lockAdmin() {
   wipeKey(st.adminKey);
   st.adminKey = undefined;
+  st.editingStaffId = undefined;
 }
 
 function lockWorkstation(reason: 'manual' | 'idle') {
@@ -932,6 +1172,8 @@ function lockWorkstation(reason: 'manual' | 'idle') {
   wipeKey(st.session?.key);
   st.session = undefined;
   st.panel = 'patient';
+  st.profileOpen = false;
+  profileTrigger = null;
   if (reason === 'manual') {
     st.selected = undefined;
     clearConsult();
@@ -942,18 +1184,43 @@ function lockWorkstation(reason: 'manual' | 'idle') {
 
 function filterPatients(q: string) {
   st.query = q;
+  let visible = 0;
   st.patients.forEach((p) => {
-    const li = app.querySelector<HTMLElement>(`#patients li[data-name="${CSS.escape(p.name.toLowerCase())}"]`);
-    if (li) li.hidden = !matches(p);
+    const show = matches(p);
+    if (show) visible++;
+    const li = app.querySelector<HTMLElement>(`#patients li[data-patient-id="${CSS.escape(p.id)}"]`);
+    if (li) li.hidden = !show;
   });
+  const badge = app.querySelector<HTMLElement>('#patient-count-badge');
+  if (badge) badge.textContent = fmtNum(st.query.trim() ? visible : st.patients.length);
+  const empty = app.querySelector<HTMLElement>('#patients-empty');
+  const emptyQ = app.querySelector<HTMLElement>('#patients-empty-q');
+  if (empty) empty.hidden = st.patients.length === 0 || visible > 0;
+  if (emptyQ) emptyQ.textContent = st.query;
+}
+
+function syncWriteControls() {
+  const preview = app.querySelector<HTMLElement>('#live-draft-preview');
+  if (preview) preview.innerHTML = renderDraftPreview(draftFromNote(st.note));
+  app.querySelectorAll<HTMLButtonElement>('.tpl-chip[data-tpl]').forEach((btn) => {
+    const tpl = TEMPLATES[Number(btn.dataset.tpl)];
+    btn.setAttribute('aria-pressed', String(Boolean(tpl && st.note === tpl.note)));
+  });
+  const clearBtn = app.querySelector<HTMLElement>('#clear-note-btn');
+  if (clearBtn) clearBtn.hidden = st.note.trim() === '';
+}
+
+function syncMedEmptyState() {
+  const meds = app.querySelector('#meds');
+  const empty = app.querySelector<HTMLElement>('#meds-empty');
+  if (meds && empty) empty.hidden = meds.children.length > 0;
 }
 
 app.addEventListener('input', (ev) => {
   const el = ev.target as HTMLInputElement;
   if (el.dataset.input === 'note') {
     st.note = el.value;
-    const preview = app.querySelector<HTMLElement>('#live-draft-preview');
-    if (preview) preview.innerHTML = renderDraftPreview(draftFromNote(st.note));
+    syncWriteControls();
   }
   if (el.dataset.input === 'search') {
     filterPatients(el.value);
@@ -990,18 +1257,60 @@ app.addEventListener('drop', (ev) => {
 });
 
 app.addEventListener('click', (ev) => {
-  const pwBtn = (ev.target as HTMLElement).closest<HTMLElement>('[data-toggle-pw]');
+  const target = ev.target as HTMLElement;
+  if (target.classList.contains('modal')) {
+    if (st.pendingCheckIn) {
+      st.pendingCheckIn = undefined;
+      render();
+      return;
+    }
+    if (st.profileOpen) {
+      closeProfileModal();
+      return;
+    }
+  }
+
+  const pwBtn = target.closest<HTMLElement>('[data-toggle-pw]');
   if (pwBtn) {
     const inp = pwBtn.parentElement?.querySelector('input');
-    if (inp) inp.type = inp.type === 'password' ? 'text' : 'password';
+    if (inp) {
+      const showing = inp.type === 'password';
+      inp.type = showing ? 'text' : 'password';
+      pwBtn.setAttribute('aria-pressed', String(showing));
+      pwBtn.setAttribute('aria-label', showing ? 'Hide passcode' : 'Show passcode');
+      pwBtn.innerHTML = showing ? ico.eyeOff : ico.eye;
+    }
     return;
   }
 
-  const el = (ev.target as HTMLElement).closest<HTMLElement>('[data-action]');
+  const el = target.closest<HTMLElement>('[data-action]');
   if (!el) return;
   const a = el.dataset.action;
   const record = () => st.records.find((r) => r.key === el.dataset.key)!;
   switch (a) {
+    case 'home':
+      if (!leaveOk()) return;
+      clearConsult();
+      lockAdmin();
+      st.selected = undefined;
+      st.panel = 'patient';
+      return render();
+    case 'open-profile':
+      if (!st.session) return;
+      profileTrigger = el;
+      st.profileOpen = true;
+      st.profileTab = 'profile';
+      return render();
+    case 'close-profile':
+      return closeProfileModal();
+    case 'profile-tab':
+      st.profileTab = el.dataset.tab === 'passcode' ? 'passcode' : 'profile';
+      return render();
+    case 'edit-staff': {
+      const id = el.dataset.id!;
+      st.editingStaffId = st.editingStaffId === id ? undefined : id;
+      return render();
+    }
     case 'sign-out':
       if (!leaveOk()) return;
       lockWorkstation('manual');
@@ -1018,7 +1327,10 @@ app.addEventListener('click', (ev) => {
       return render();
     case 'select':
       if (el.dataset.id !== st.selected?.id && !leaveOk()) return;
-      if (el.dataset.id !== st.selected?.id) clearConsult();
+      if (el.dataset.id !== st.selected?.id) {
+        clearConsult();
+        st.historyFilter = 'all';
+      }
       lockAdmin();
       st.selected = st.patients.find((p) => p.id === el.dataset.id); st.panel = 'patient'; return void refresh();
     case 'clear-search': {
@@ -1027,6 +1339,10 @@ app.addEventListener('click', (ev) => {
       app.querySelector<HTMLInputElement>('input[data-input="search"]')?.focus();
       return;
     }
+    case 'history-filter': {
+      st.historyFilter = el.dataset.filter === 'current' ? 'current' : 'all';
+      return render();
+    }
     case 'template': {
       const idx = Number(el.dataset.tpl);
       const tpl = TEMPLATES[idx];
@@ -1034,10 +1350,19 @@ app.addEventListener('click', (ev) => {
       if (tpl && ta) {
         ta.value = tpl.note;
         st.note = tpl.note;
-        const preview = app.querySelector<HTMLElement>('#live-draft-preview');
-        if (preview) preview.innerHTML = renderDraftPreview(draftFromNote(st.note));
+        syncWriteControls();
         ta.focus();
       }
+      return;
+    }
+    case 'clear-note': {
+      const ta = app.querySelector<HTMLTextAreaElement>('textarea[name="note"]');
+      st.note = '';
+      if (ta) {
+        ta.value = '';
+        ta.focus();
+      }
+      syncWriteControls();
       return;
     }
     case 'history':
@@ -1052,8 +1377,14 @@ app.addEventListener('click', (ev) => {
       st.shown = qrValid(r) ? r : await reissue(st.session!, st.license!, r, st.selected!);
       st.stage = 'qr';
     }, el);
-    case 'add-med': document.querySelector('#meds')!.insertAdjacentHTML('beforeend', medRow({ name: '', dose: '', freq: '' })); return;
-    case 'remove-med': el.closest('.med')?.remove(); return;
+    case 'add-med': {
+      document.querySelector('#meds')!.insertAdjacentHTML('beforeend', medRow({ name: '', dose: '', freq: '' }));
+      syncMedEmptyState();
+      const inputs = document.querySelectorAll<HTMLInputElement>('#meds .med:last-child input[name="med_name"]');
+      inputs[0]?.focus();
+      return;
+    }
+    case 'remove-med': el.closest('.med')?.remove(); syncMedEmptyState(); return;
     case 'toggle-staff': return void run(async () => {
       if (!st.adminKey) throw new Error('Unlock clinic administration first.');
       const x = st.staff.find((s) => s.staff_id === el.dataset.id)!;
@@ -1132,13 +1463,16 @@ app.addEventListener('keydown', (ev) => {
   }
   if (ev.key === 'Enter' && (ev.target as HTMLElement).hasAttribute('data-hold-erase')) {
     ev.preventDefault();
-    void tryEraseWithPasscode();
+    if (confirm('Erase the clinic license, clinicians, patients, and records from this browser?')) {
+      void tryEraseWithPasscode();
+    }
   }
 });
 
 // ---------- camera check-in (drag-to-dismiss sheet) ----------
 
 async function startScan() {
+  const prev = document.activeElement as HTMLElement | null;
   let stream: MediaStream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
@@ -1152,10 +1486,13 @@ async function startScan() {
   modal.setAttribute('aria-label', 'Scan check-in code');
   modal.innerHTML = `<div class="card">
     <div class="sheet-handle" aria-hidden="true"></div>
-    <h3>Scan the patient’s check-in code</h3>
+    <div class="card-header" style="margin-bottom:8px">
+      <h3 style="margin:0">Scan the patient’s check-in code</h3>
+      <span class="tag tag-ok">Camera active</span>
+    </div>
     <div class="viewfinder"><video playsinline muted></video><span></span></div>
     <p class="muted small">On the patient’s phone: <b>patnub › Scan</b>. Hold it about 20 cm from the camera.</p>
-    <div class="actions"><button class="btn" data-stop>Cancel</button></div>
+    <div class="actions"><button type="button" class="btn" data-stop>Cancel</button></div>
   </div>`;
   document.body.append(modal);
   const video = modal.querySelector('video')!;
@@ -1172,11 +1509,15 @@ async function startScan() {
     stream.getTracks().forEach((t) => t.stop());
     modal.remove();
     document.removeEventListener('keydown', onKey);
+    prev?.focus();
   };
   cleanupDrag = attachDragDismiss({ sheet: modal.querySelector<HTMLElement>('.card')!, backdrop: modal, onDismiss: stop });
-  modal.querySelector('[data-stop]')!.addEventListener('click', stop);
+  const stopBtn = modal.querySelector<HTMLButtonElement>('[data-stop]')!;
+  stopBtn.addEventListener('click', stop);
+  modal.addEventListener('click', (e) => { if (e.target === modal) stop(); });
   const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') stop(); };
   document.addEventListener('keydown', onKey);
+  stopBtn.focus();
 
   const tick = () => {
     if (stopped) return;
@@ -1206,12 +1547,13 @@ function present(r: ClinicRecord) {
   el.setAttribute('aria-modal', 'true');
   el.setAttribute('aria-label', 'QR code for the patient');
   el.tabIndex = -1;
-  el.innerHTML = `<div class="present-inner">
-    <div class="sheet-handle" aria-hidden="true"></div>
-    <div class="qr">${qrSvg(r.qr)}</div>
-    <p><b>${esc(st.selected?.name ?? '')}</b> · patnub › Scan › Scan a record</p>
-    <p class="muted small">Tap, drag down, or press Esc to close</p>
-  </div>`;
+  el.innerHTML = `<button type="button" class="btn btn-sm present-close" aria-label="Close full-screen QR">${ico.close} Close</button>
+    <div class="present-inner">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="qr">${qrSvg(r.qr)}</div>
+      <p><b>${esc(st.selected?.name ?? '')}</b> · patnub › Scan › Scan a record</p>
+      <p class="muted small">Tap anywhere, drag down, or press Esc to close</p>
+    </div>`;
   let closed = false;
   let cleanupDrag = () => {};
   const close = () => {
@@ -1233,11 +1575,15 @@ function present(r: ClinicRecord) {
   el.focus();
 }
 
-// Esc dismisses check-in confirm; `/` focuses patient search.
+// Esc dismisses check-in confirm or profile modal; `/` focuses patient search.
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && st.pendingCheckIn) {
     st.pendingCheckIn = undefined;
     render();
+    return;
+  }
+  if (e.key === 'Escape' && st.profileOpen) {
+    closeProfileModal();
     return;
   }
   if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {

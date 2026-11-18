@@ -64,6 +64,8 @@ private val DarkColors = darkColorScheme(
 // Tighter tracking on large text, slightly heavier titles (Apple UI typography guidance).
 private val base = Typography()
 private val AppTypography = base.copy(
+    // iOS-style large title: bold, tight leading, negative tracking that grows with size.
+    headlineLarge = base.headlineLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.6).sp, lineHeight = 38.sp),
     headlineMedium = base.headlineMedium.copy(fontWeight = FontWeight.SemiBold, letterSpacing = (-0.4).sp),
     headlineSmall = base.headlineSmall.copy(fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp),
     titleLarge = base.titleLarge.copy(fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp),

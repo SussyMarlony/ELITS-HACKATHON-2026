@@ -2,15 +2,33 @@ package ai.patnub.ui.patient
 
 import ai.patnub.R
 import ai.patnub.assistant.Assistant
+import ai.patnub.assistant.Language
 import ai.patnub.assistant.Reply
 import ai.patnub.assistant.Source
+import ai.patnub.ui.components.AppearTracker
 import ai.patnub.ui.components.EmptyState
+import ai.patnub.ui.components.Motion
+import ai.patnub.ui.components.appear
+import ai.patnub.ui.components.pressClickable
+import ai.patnub.ui.components.pressScale
+import ai.patnub.ui.components.rememberAppearTracker
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
-import androidx.compose.material3.OutlinedButton
+import ai.patnub.ui.components.OutlinedButton
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -44,7 +62,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
+import ai.patnub.ui.components.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -60,7 +78,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.material3.InputChip
-import androidx.compose.material3.TextButton
+import ai.patnub.ui.components.TextButton
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -184,6 +202,9 @@ fun AssistantScreen(
         }
     }
     val listState = rememberLazyListState()
+    // Messages already there when the tab opens stay put; only new ones rise in.
+    val appeared = remember { AppearTracker(windowMs = Long.MAX_VALUE).apply { markSeen(chat.items.indices) } }
+    val intro = rememberAppearTracker()
     val last = chat.items.lastOrNull()
     // Follow new messages. While text streams in, follow only if the last message is on screen,
     // so someone reading an earlier answer is not pulled away.
@@ -212,9 +233,13 @@ fun AssistantScreen(
                     Modifier.padding(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                 ) {
-                    listOf(R.string.suggest_1, R.string.suggest_2, R.string.suggest_3).forEach { id ->
+                    listOf(R.string.suggest_1, R.string.suggest_2, R.string.suggest_3).forEachIndexed { i, id ->
                         val text = stringResource(id)
-                        SuggestionChip(onClick = { send(text) }, label = { Text(text) })
+                        val source = remember { MutableInteractionSource() }
+                        SuggestionChip(
+                            onClick = { send(text) }, label = { Text(text) }, interactionSource = source,
+                            modifier = Modifier.appear(intro, id, index = i + 2).pressScale(source),
+                        )
                     }
                 }
             }
@@ -225,9 +250,11 @@ fun AssistantScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                itemsIndexed(chat.items) { _, item ->
+                itemsIndexed(chat.items) { index, item ->
+                    // Questions rise from the composer; answers fade in where they will be read.
+                    val enter = Modifier.appear(appeared, index, rise = if (item is ChatItem.Question) 24f else 8f)
                     when (item) {
-                        is ChatItem.Question -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        is ChatItem.Question -> Row(enter.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                             Text(
                                 (if (item.hasPhoto) "📷 " else "") + item.text,
                                 color = MaterialTheme.colorScheme.onPrimary,
@@ -237,12 +264,12 @@ fun AssistantScreen(
                                     .padding(horizontal = 14.dp, vertical = 10.dp),
                             )
                         }
-                        is ChatItem.Answer -> AnswerBubble(item)
+                        is ChatItem.Answer -> Box(enter) { AnswerBubble(item) }
                     }
                 }
             }
         }
-        if (photo != null) {
+        AnimatedVisibility(photo != null, enter = fadeIn() + expandVertically(Motion.spring()), exit = fadeOut() + shrinkVertically(Motion.spring(0.25f))) {
             InputChip(
                 selected = true, onClick = { photo = null },
                 label = { Text(stringResource(R.string.assistant_photo_attached)) },
@@ -273,7 +300,7 @@ fun AssistantScreen(
                             .minimumInteractiveComponentSize()
                             .size(36.dp)
                             .clip(CircleShape)
-                            .clickable(role = Role.Button) {
+                            .pressClickable {
                                 pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                             },
                         contentAlignment = Alignment.Center,
@@ -308,7 +335,16 @@ fun AssistantScreen(
                         maxLines = 4,
                     )
                 }
-                if (chat.busy) {
+                // Send and Stop share one spot, so one morphs into the other instead of swapping abruptly.
+                AnimatedContent(
+                    chat.busy,
+                    transitionSpec = {
+                        (fadeIn(tween(160)) + scaleIn(Motion.spring(0.3f, 0.7f), initialScale = 0.6f)) togetherWith
+                            (fadeOut(tween(90)) + scaleOut(tween(120), targetScale = 0.6f))
+                    },
+                    label = "sendStop",
+                ) { busy ->
+                if (busy) {
                     CircleAction(
                         icon = R.drawable.ic_stop,
                         description = stringResource(R.string.assistant_stop),
@@ -327,6 +363,7 @@ fun AssistantScreen(
                         onClick = { send(input) },
                     )
                 }
+                }
             }
         }
     }
@@ -341,18 +378,21 @@ private fun CircleAction(
     onClick: () -> Unit,
     enabled: Boolean = true,
 ) {
+    // Send turns teal the moment there is something to send.
+    val bg by animateColorAsState(background, tween(200, easing = Motion.EaseOut), label = "circleBg")
+    val fg by animateColorAsState(tint, tween(200, easing = Motion.EaseOut), label = "circleFg")
     Surface(
         shape = CircleShape,
-        color = background,
+        color = bg,
         modifier = Modifier
             // 48 dp touch target around the 36 dp circle (Material minimum).
             .minimumInteractiveComponentSize()
             .size(36.dp)
             .clip(CircleShape)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+            .pressClickable(enabled = enabled, onClick = onClick),
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-            Icon(painterResource(icon), contentDescription = description, tint = tint, modifier = Modifier.size(20.dp))
+            Icon(painterResource(icon), contentDescription = description, tint = fg, modifier = Modifier.size(20.dp))
         }
     }
 }
@@ -393,12 +433,30 @@ private fun AnswerBubble(item: ChatItem.Answer) {
         }
         Reply.NoMatch -> Card(bubble) { Text(stringResource(R.string.no_match), Modifier.padding(16.dp)) }
         Reply.NeedsModel -> Card(bubble) { Text(stringResource(R.string.assistant_needs_model), Modifier.padding(16.dp)) }
+        is Reply.NextVisit -> Card(bubble, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)) {
+            Text(
+                if (r.followUp != null) stringResource(R.string.next_visit_found, r.clinician ?: stringResource(R.string.next_visit_clinician), r.date.orEmpty(), r.followUp)
+                else stringResource(R.string.next_visit_none),
+                Modifier.padding(16.dp),
+            )
+        }
+        is Reply.SmallTalk -> Card(bubble, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)) {
+            val id = when (r.kind) {
+                Language.SmallTalk.HELLO -> if (r.tagalog) R.string.small_talk_hello_tl else R.string.small_talk_hello
+                Language.SmallTalk.THANKS -> if (r.tagalog) R.string.small_talk_thanks_tl else R.string.small_talk_thanks
+                Language.SmallTalk.BYE -> if (r.tagalog) R.string.small_talk_bye_tl else R.string.small_talk_bye
+            }
+            Text(stringResource(id), Modifier.padding(16.dp))
+        }
         Reply.OffTopic -> Card(bubble) { Text(stringResource(R.string.assistant_off_topic), Modifier.padding(16.dp)) }
         is Reply.Failed -> Card(bubble) { Text(stringResource(R.string.assistant_failed), Modifier.padding(16.dp)) }
         is Reply.Answer -> Card(bubble, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (r.fallback) Label(stringResource(R.string.answer_fallback))
+                if (r.careFacts.isNotEmpty()) CareFacts(r.careFacts)
                 when {
+                    // Care facts alone (no model, no passage) are the whole answer.
+                    item.text.isBlank() && r.careFacts.isNotEmpty() && (item.done || r.fallback) -> Unit
                     item.text.isBlank() && !item.done -> ReadingProgress()
                     // The model stopped without a visible reply (e.g. ran out of length while reasoning).
                     item.text.isBlank() -> Text(stringResource(R.string.assistant_empty_answer), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -415,6 +473,24 @@ private fun AnswerBubble(item: ChatItem.Answer) {
                 }
             }
         }
+    }
+}
+
+/** Safety facts for this situation, shown as written (not by the model), before the answer. */
+@Composable
+private fun CareFacts(facts: List<String>) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(12.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            stringResource(R.string.care_facts_title), style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.semantics { heading() },
+        )
+        facts.forEach { Text(it, color = MaterialTheme.colorScheme.onSecondaryContainer) }
     }
 }
 

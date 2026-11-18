@@ -3,7 +3,7 @@ package ai.patnub.assistant
 
 /** Emergency phrases. VERIFIED: found word for word in the cited public-domain source. */
 internal object RedFlagRules {
-    const val CONTENT_VERSION = "dff7cc439d4de468"
+    const val CONTENT_VERSION = "54be3cb1021c0eef"
 
     val verified: Map<RedFlagCategory, List<String>> = mapOf(
         RedFlagCategory.CARDIAC_RESPIRATORY to listOf("chest pain", "trouble breathing", "chest discomfort", "shortness of breath", "chest tightness"),

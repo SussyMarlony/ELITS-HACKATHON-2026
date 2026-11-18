@@ -1,5 +1,5 @@
 {
- "content_version": "dff7cc439d4de468",
+ "content_version": "54be3cb1021c0eef",
  "sources": {
   "medlineplus": "https://medlineplus.gov/xml/mplus_topics_2026-11-17.xml",
   "fda_labels": [
@@ -13,7 +13,8 @@
    "d15733a9-d5fd-4d5f-86ce-e7ed8c706c7f",
    "03c0a599-072a-10ef-e063-6394a90a9698",
    "5ceaec04-3ca3-4c7c-9184-51a42686a595",
-   "5d62969b-2ad9-6cf0-e063-6394a90ac2f0"
+   "5d62969b-2ad9-6cf0-e063-6394a90ac2f0",
+   "2cf17a28-711f-77bd-e063-6394a90a7061"
   ]
  },
  "clinical_review": "pending"

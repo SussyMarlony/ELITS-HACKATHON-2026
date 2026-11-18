@@ -104,13 +104,14 @@ export interface DragDismissOptions {
   backdrop: HTMLElement;
   onDismiss: () => void;
   threshold?: number;
+  animateEntrance?: boolean;
 }
 
 /**
  * Attaches 1:1 pointer-tracked drag-to-dismiss to a modal sheet or full-screen presenter.
  * Upward drag rubber-bands; downward release projects momentum and hands velocity to the spring.
  */
-export function attachDragDismiss({ sheet, backdrop, onDismiss, threshold = 110 }: DragDismissOptions): () => void {
+export function attachDragDismiss({ sheet, backdrop, onDismiss, threshold = 110, animateEntrance = true }: DragDismissOptions): () => void {
   const springY = new SpringValue(0);
   const samples: Array<{ y: number; t: number }> = [];
   let pointerId: number | null = null;
@@ -125,7 +126,7 @@ export function attachDragDismiss({ sheet, backdrop, onDismiss, threshold = 110 
   };
 
   // Entrance settle: materialize from subtle offset with critically damped spring.
-  if (!prefersReducedMotion()) {
+  if (animateEntrance && !prefersReducedMotion()) {
     springY.snap(18);
     backdrop.style.opacity = '0';
     requestAnimationFrame(() => {
@@ -222,17 +223,24 @@ let pillLeftSpring = new SpringValue(0);
 let pillWidthSpring = new SpringValue(0);
 let lastPillLeft: number | null = null;
 let lastPillWidth: number | null = null;
+let lastSegGroup: string | null = null;
 
 /** Animates a segmented control indicator pill from its last live presentation bounds. */
 export function syncSegmentedPill(container: HTMLElement | null) {
-  if (!container) return;
+  if (!container) {
+    lastPillLeft = null;
+    lastPillWidth = null;
+    lastSegGroup = null;
+    return;
+  }
   const pill = container.querySelector<HTMLElement>('.seg-pill');
   const active = container.querySelector<HTMLElement>('[aria-selected="true"]');
   if (!pill || !active) return;
 
+  const group = container.dataset.segGroup ?? 'default';
   const targetLeft = active.offsetLeft;
   const targetWidth = active.offsetWidth;
-  if (lastPillLeft === null || lastPillWidth === null) {
+  if (lastPillLeft === null || lastPillWidth === null || lastSegGroup !== group) {
     pillLeftSpring.snap(targetLeft);
     pillWidthSpring.snap(targetWidth);
     pill.style.transform = `translate3d(${targetLeft}px, 0, 0)`;
@@ -242,7 +250,7 @@ export function syncSegmentedPill(container: HTMLElement | null) {
     pillWidthSpring.snap(lastPillWidth);
     pillLeftSpring.to(targetLeft, {
       dampingRatio: 1.0,
-      response: 0.28,
+      response: 0.26,
       onUpdate: (x) => {
         lastPillLeft = x;
         pill.style.transform = `translate3d(${x}px, 0, 0)`;
@@ -250,7 +258,7 @@ export function syncSegmentedPill(container: HTMLElement | null) {
     });
     pillWidthSpring.to(targetWidth, {
       dampingRatio: 1.0,
-      response: 0.28,
+      response: 0.26,
       onUpdate: (w) => {
         lastPillWidth = w;
         pill.style.width = `${w}px`;
@@ -259,4 +267,5 @@ export function syncSegmentedPill(container: HTMLElement | null) {
   }
   lastPillLeft = targetLeft;
   lastPillWidth = targetWidth;
+  lastSegGroup = group;
 }
