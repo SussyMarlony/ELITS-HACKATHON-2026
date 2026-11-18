@@ -1,13 +1,14 @@
 import jsQR from 'jsqr';
 import qrcode from 'qrcode-generator';
 import type { KeyPair } from '../../contract/contract.ts';
+import { AuthThrottle } from './auth-guard.ts';
 import {
   activateLicense, checkClinician, createClinician, eraseDevice, exportBackup, getLicense, importBackup, issue, licenseActive,
-  listAllRecords, listAudit, listPatients, listStaff, qrValid, readCheckIn, recordsFor, reissue, savePatient, setDisabled, signIn,
-  type CheckInResult, type Session,
+  listAllRecords, listAudit, listPatients, listStaff, qrValid, readCheckIn, recordLockAudit, recordsFor, reissue, savePatient,
+  setDisabled, signIn, unlockAdmin, wipeKey, type CheckInResult, type Session,
 } from './clinic.ts';
 import { draftFromNote, type Draft } from './draft.ts';
-import { attachDragDismiss, syncSegmentedPill } from './spring.ts';
+import { attachDragDismiss } from './spring.ts';
 import type { AuditEvent, ClinicRecord, License, Patient, Staff } from './store.ts';
 import './style.css';
 
@@ -17,6 +18,8 @@ const st: {
   license?: License;
   staff: Staff[];
   session?: Session;
+  /** Unwrapped only after explicit step-up passcode entry; wiped on exit or 2m idle. */
+  adminKey?: KeyPair;
   pendingAdmin?: KeyPair; // admin key from a just-imported license, until the first account exists
   patients: Patient[];
   allRecords: ClinicRecord[];
@@ -32,7 +35,7 @@ const st: {
   shown?: ClinicRecord;
   pendingCheckIn?: CheckInResult;
   query: string;
-  /** Set when the idle lock signed someone out; their unfinished consultation is kept for them only. */
+  /** Set when the idle/manual lock signed someone out; their unfinished consultation is kept for them only. */
   lockedFrom?: string;
   loaded: boolean;
 } = {
@@ -42,6 +45,9 @@ const st: {
 
 const DEBUG = new URLSearchParams(location.search).has('debug');
 const IDLE_LOCK_MS = 10 * 60_000; // shared clinic device (spec v1.2)
+const ADMIN_IDLE_MS = 2 * 60_000; // step-up admin key expires quickly if unattended
+const signInThrottle = new AuthThrottle();
+const adminThrottle = new AuthThrottle();
 const app = document.querySelector<HTMLElement>('#app')!;
 let modalDragCleanup: (() => void) | null = null;
 
@@ -118,6 +124,7 @@ const ico = {
   clock: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>',
   expand: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>',
   back: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
+  lock: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
 };
 
 const TEMPLATES: Array<{ label: string; note: string }> = [
@@ -169,23 +176,22 @@ function render() {
       </div>
       <span class="grow"></span>
       ${s.session ? `
-        ${s.session.admin ? `
-          <div class="seg" role="tablist" aria-label="Workspace section">
-            <span class="seg-pill" aria-hidden="true"></span>
-            <button class="seg-btn" role="tab" aria-selected="${s.panel === 'patient'}" data-action="panel" data-panel="patient">Patients</button>
-            <button class="seg-btn" role="tab" aria-selected="${s.panel === 'admin'}" data-action="panel" data-panel="admin">Clinic admin</button>
-          </div>` : ''}
+        ${s.panel === 'admin' ? `
+          <span class="pill ${s.adminKey ? 'pill-off' : ''}">${ico.lock} ${s.adminKey ? 'Admin unlocked · auto-locks 2m' : 'Admin verification required'}</span>
+          <button class="btn btn-sm btn-soft" data-action="exit-admin">${ico.back} Back to patients</button>
+        ` : s.session.canAdmin ? `
+          <button class="btn btn-sm btn-ghost" data-action="open-admin" title="Requires admin passcode">${ico.lock} Clinic admin</button>
+        ` : ''}
         <span class="user-chip">
           ${avatarHtml(s.session.staff.body.name, 'sm')}
           <span class="who">${esc(by(s.session.staff))}</span>
         </span>
-        <button class="btn btn-sm btn-ghost" data-action="sign-out">Sign out</button>
+        <button class="btn btn-sm" data-action="sign-out" title="Lock workstation">${ico.lock} Lock</button>
       ` : ''}
     </header>
     ${body}
     ${s.pendingCheckIn ? viewCheckInConfirm(s.pendingCheckIn) : ''}`;
 
-  syncSegmentedPill(app.querySelector('.seg'));
   const sheet = app.querySelector<HTMLElement>('.modal .card');
   const backdrop = app.querySelector<HTMLElement>('.modal');
   if (sheet && backdrop) {
@@ -204,7 +210,7 @@ function render() {
 // Move focus to the screen's first field only when the screen changes, never on every render.
 let lastView = '';
 function focusOnViewChange() {
-  const view = [st.loaded, !!st.license, st.staff.length > 0, !!st.session, st.panel, st.selected?.id, st.stage, !!st.pendingCheckIn].join('|');
+  const view = [st.loaded, !!st.license, st.staff.length > 0, !!st.session, st.panel, !!st.adminKey, st.selected?.id, st.stage, !!st.pendingCheckIn].join('|');
   if (view === lastView) return;
   lastView = view;
   app.querySelector<HTMLElement>('[data-autofocus]')?.focus();
@@ -359,7 +365,7 @@ function viewHome() {
         <form data-form="paste-checkin"><textarea name="code" rows="3" placeholder="PATNUB:CI1:..."></textarea><button class="btn btn-sm block">Read code</button></form>
       </details>` : ''}
     </aside>
-    <main class="canvas canvas-enter">${st.panel === 'admin' ? viewAdmin() : st.selected ? viewPatient(st.selected) : viewDashboard()}</main>
+    <main class="canvas canvas-enter">${st.panel === 'admin' ? (st.adminKey ? viewAdmin() : viewAdminGate()) : st.selected ? viewPatient(st.selected) : viewDashboard()}</main>
   </div>`;
 }
 
@@ -643,6 +649,21 @@ function viewCheckInConfirm(c: CheckInResult) {
   </div>`;
 }
 
+function viewAdminGate() {
+  return `<div class="card admin-gate">
+    <div class="admin-gate-icon">${ico.lock}</div>
+    <h2>Verify admin passcode</h2>
+    <p class="muted">Clinic administration (staff accounts, audit log, backups, and device reset) is separated from patient care and auto-locks after 2 minutes of inactivity.</p>
+    <form data-form="admin-unlock">
+      <label>Admin passcode for ${esc(st.session!.staff.body.name)}${passwordInput('passcode', 'required autocomplete="current-password" data-autofocus')}</label>
+      <div class="actions">
+        <button type="button" class="btn" data-action="exit-admin">Cancel</button>
+        <button class="btn btn-primary" data-busy="Verifying…">${ico.lock} Unlock admin</button>
+      </div>
+    </form>
+  </div>`;
+}
+
 function viewAdmin() {
   return `<div class="admin-grid">
     <div class="card">
@@ -680,7 +701,7 @@ function viewAdmin() {
           <label>Your passcode${passwordInput('passcode', 'required')}</label>
           <button class="btn btn-primary" data-busy="Preparing backup…">${ico.upload} Download backup</button>
         </form>
-        <details><summary>Restore from backup (replaces data on this device)</summary>${backupImportForm()}</details>
+        <details><summary>Restore from backup (replaces data on this device)</summary>${backupImportForm(true)}</details>
       </div>
 
       <div class="card">
@@ -697,7 +718,8 @@ function viewAdmin() {
 
       <div class="card">
         <h3>Reset device</h3>
-        <p class="muted small">Deletes the license, clinicians, patients, and records from this browser. Export a backup first if needed.</p>
+        <p class="muted small">Deletes the license, clinicians, patients, and records from this browser. Enter your admin passcode, then hold for 1.5s to confirm.</p>
+        <label>Confirm admin passcode${passwordInput('erase_passcode', 'id="erase-passcode" autocomplete="current-password"')}</label>
         <button type="button" class="btn btn-hold" data-hold-erase>
           <span>Hold 1.5s to erase everything</span>
           <span class="btn-hold-fill" aria-hidden="true">Erasing… keep holding</span>
@@ -707,10 +729,11 @@ function viewAdmin() {
   </div>`;
 }
 
-function backupImportForm() {
+function backupImportForm(requireAdminPass = false) {
   return `<form data-form="import" style="margin-top:10px">
     <label>Backup file<input name="file" type="file" accept=".json" required></label>
-    <label>Passcode it was saved with${passwordInput('passcode', 'required')}</label>
+    <label>Passcode the backup was saved with${passwordInput('passcode', 'required')}</label>
+    ${requireAdminPass ? `<label>Your current admin passcode${passwordInput('admin_passcode', 'required autocomplete="current-password"')}</label>` : ''}
     <button class="btn" data-busy="Restoring…">Restore backup</button>
   </form>`;
 }
@@ -832,15 +855,34 @@ app.addEventListener('submit', (ev) => {
       st.pendingAdmin = undefined;
     }, btn, 'Account created. Sign in to start.');
     case 'add-clinician': return run(async () => {
+      if (!st.adminKey) throw new Error('Unlock clinic administration first.');
       const c = clinician();
       const problem = checkClinician(c, f('confirm'));
       if (problem) throw new Error(problem);
-      await createClinician(c, st.session!.admin!, st.license!, actor());
+      await createClinician(c, st.adminKey, st.license!, actor());
       form.reset();
     }, btn, `${f('name').trim()} can now sign in.`);
+    case 'admin-unlock': return run(async () => {
+      const wait = adminThrottle.cooldownSeconds();
+      if (wait > 0) throw new Error(`Too many wrong passcodes. Try again in ${wait} s.`);
+      const key = await unlockAdmin(actor(), f('passcode'));
+      if (!key) {
+        const sWait = adminThrottle.recordFailure();
+        throw new Error(sWait > 0 ? `Wrong passcode. Try again in ${sWait} s.` : 'Wrong admin passcode.');
+      }
+      adminThrottle.reset();
+      st.adminKey = key;
+      touch();
+    }, btn, 'Admin access unlocked for 2 minutes.');
     case 'sign-in': return run(async () => {
+      const wait = signInThrottle.cooldownSeconds();
+      if (wait > 0) throw new Error(`Too many wrong passcodes. Try again in ${wait} s.`);
       const s = await signIn(f('staff_id'), f('passcode'));
-      if (!s) throw new Error('Wrong passcode. Try again.');
+      if (!s) {
+        const sWait = signInThrottle.recordFailure();
+        throw new Error(sWait > 0 ? `Wrong passcode. Try again in ${sWait} s.` : 'Wrong passcode. Try again.');
+      }
+      signInThrottle.reset();
       if (st.lockedFrom !== s.staff.staff_id) { st.selected = undefined; clearConsult(); }
       st.lockedFrom = undefined;
       st.session = s;
@@ -876,13 +918,38 @@ app.addEventListener('submit', (ev) => {
     case 'import': return run(async () => {
       const file = (form.elements.namedItem('file') as HTMLInputElement).files?.[0];
       if (!file) throw new Error('Choose a backup file.');
+      if (st.session) {
+        if (!st.adminKey) throw new Error('Unlock clinic administration first.');
+        const ok = await unlockAdmin(actor(), f('admin_passcode'));
+        if (!ok) throw new Error('Wrong current admin passcode.');
+        wipeKey(ok);
+      }
       await importBackup(await file.text(), f('passcode'));
-      st.session = undefined;
+      lockWorkstation('manual');
       st.selected = undefined;
       clearConsult();
     }, btn, 'Backup restored. Sign in again.');
   }
 });
+
+function lockAdmin() {
+  wipeKey(st.adminKey);
+  st.adminKey = undefined;
+}
+
+function lockWorkstation(reason: 'manual' | 'idle') {
+  const id = st.session?.staff.staff_id;
+  lockAdmin();
+  wipeKey(st.session?.key);
+  st.session = undefined;
+  st.panel = 'patient';
+  if (reason === 'manual') {
+    st.selected = undefined;
+    clearConsult();
+    st.lockedFrom = undefined;
+  }
+  if (id) void recordLockAudit(id, reason);
+}
 
 function filterPatients(q: string) {
   st.query = q;
@@ -948,13 +1015,22 @@ app.addEventListener('click', (ev) => {
   switch (a) {
     case 'sign-out':
       if (!leaveOk()) return;
-      st.session = undefined; st.selected = undefined; st.panel = 'patient'; clearConsult(); return render();
-    case 'panel':
-      if (!leaveOk()) return;
-      clearConsult(); st.panel = el.dataset.panel as 'patient' | 'admin'; return render();
+      lockWorkstation('manual');
+      return render();
+    case 'open-admin':
+      if (!st.session?.canAdmin || !leaveOk()) return;
+      clearConsult();
+      lockAdmin();
+      st.panel = 'admin';
+      return render();
+    case 'exit-admin':
+      lockAdmin();
+      st.panel = 'patient';
+      return render();
     case 'select':
       if (el.dataset.id !== st.selected?.id && !leaveOk()) return;
       if (el.dataset.id !== st.selected?.id) clearConsult();
+      lockAdmin();
       st.selected = st.patients.find((p) => p.id === el.dataset.id); st.panel = 'patient'; return void refresh();
     case 'clear-search': {
       st.query = '';
@@ -990,6 +1066,7 @@ app.addEventListener('click', (ev) => {
     case 'add-med': document.querySelector('#meds')!.insertAdjacentHTML('beforeend', medRow({ name: '', dose: '', freq: '' })); return;
     case 'remove-med': el.closest('.med')?.remove(); return;
     case 'toggle-staff': return void run(async () => {
+      if (!st.adminKey) throw new Error('Unlock clinic administration first.');
       const x = st.staff.find((s) => s.staff_id === el.dataset.id)!;
       await setDisabled(x, !x.disabled, actor());
     }, el, 'Saved.');
@@ -1020,12 +1097,31 @@ app.addEventListener('click', (ev) => {
   }
 });
 
-// Hold-to-erase (1.5s linear fill via clip-path; instant 180ms release snap-back)
+// Hold-to-erase (requires admin passcode + 1.5s linear hold via clip-path)
 let holdTimer: ReturnType<typeof setTimeout> | null = null;
 const cancelHold = () => {
   if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
   app.querySelectorAll('.btn-hold.holding').forEach((b) => b.classList.remove('holding'));
 };
+async function tryEraseWithPasscode() {
+  const inp = app.querySelector<HTMLInputElement>('#erase-passcode');
+  const pass = inp?.value ?? '';
+  if (!pass) {
+    toast('Enter your admin passcode above before erasing.', 'error');
+    inp?.focus();
+    return;
+  }
+  const ok = await unlockAdmin(actor(), pass);
+  if (!ok) {
+    toast('Wrong admin passcode.', 'error');
+    inp?.focus();
+    return;
+  }
+  wipeKey(ok);
+  lockWorkstation('manual');
+  await eraseDevice();
+  location.reload();
+}
 app.addEventListener('pointerdown', (ev) => {
   const btn = (ev.target as HTMLElement).closest<HTMLElement>('[data-hold-erase]');
   if (!btn || ev.button !== 0) return;
@@ -1033,7 +1129,8 @@ app.addEventListener('pointerdown', (ev) => {
   btn.classList.add('holding');
   holdTimer = setTimeout(() => {
     holdTimer = null;
-    void eraseDevice().then(() => location.reload());
+    cancelHold();
+    void tryEraseWithPasscode();
   }, 1500);
 });
 ['pointerup', 'pointercancel', 'pointerleave'].forEach((t) => app.addEventListener(t, cancelHold, true));
@@ -1046,9 +1143,7 @@ app.addEventListener('keydown', (ev) => {
   }
   if (ev.key === 'Enter' && (ev.target as HTMLElement).hasAttribute('data-hold-erase')) {
     ev.preventDefault();
-    if (confirm('Erase all clinic data on this device? This cannot be undone.')) {
-      void eraseDevice().then(() => location.reload());
-    }
+    void tryEraseWithPasscode();
   }
 });
 
@@ -1175,16 +1270,22 @@ const touch = () => { lastActivity = Date.now(); };
 ['pointerdown', 'keydown'].forEach((t) => document.addEventListener(t, touch, { passive: true }));
 
 setInterval(() => {
+  if (st.adminKey && Date.now() - lastActivity > ADMIN_IDLE_MS) {
+    lockAdmin();
+    st.panel = 'patient';
+    toast('Admin access locked after 2 minutes of inactivity.');
+    render();
+  }
   if (st.session && Date.now() - lastActivity > IDLE_LOCK_MS) {
     st.lockedFrom = st.session.staff.staff_id;
-    st.session = undefined;
+    lockWorkstation('idle');
     document.querySelector('.present')?.remove();
     render();
   }
   app.querySelectorAll<HTMLElement>('[data-countdown]').forEach((n) => {
     n.textContent = timeLeft(Number(n.dataset.countdown)) ?? 'expired';
   });
-}, 30_000);
+}, 10_000);
 
 window.addEventListener('online', render);
 window.addEventListener('offline', render);

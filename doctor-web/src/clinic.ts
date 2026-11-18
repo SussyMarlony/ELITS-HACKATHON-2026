@@ -15,7 +15,8 @@ const now = () => Math.floor(Date.now() / 1000);
 export interface Session {
   staff: Staff;
   key: KeyPair;
-  admin?: KeyPair; // present when the clinician is an admin
+  /** True when this clinician holds a wrapped clinic admin key; requires step-up passcode to unlock. */
+  canAdmin: boolean;
 }
 
 // ---------- license ----------
@@ -43,7 +44,7 @@ export async function activateLicense(fileText: string): Promise<{ license: Lice
   if (body.t !== 'license' || body.admin_pub !== file.admin.pub) throw new Error('This license file is damaged.');
   const license: License = { id: 'license', cert: file.license_cert, body, admin_pub: body.admin_pub };
   await put('kv', license);
-  await audit('system', 'LICENSE_ACTIVATED', body.clinic_id, `valid until ${new Date(body.exp * 1000).toISOString()}`);
+  await audit('system', 'LICENSE_ACTIVATED', body.clinic_id, `valid until ${new Date(body.exp * 1000).toISOString().slice(0, 10)}`);
   return { license, admin: { pub: unb64u(file.admin.pub), priv: unb64u(file.admin.priv) } };
 }
 
@@ -112,9 +113,32 @@ export async function signIn(staffId: string, passcode: string): Promise<Session
     await audit(staffId, 'SIGN_IN_FAILED', staffId);
     return null;
   }
-  const admin = staff.admin_key ? await unwrapSecret(staff.admin_key, passcode) : null;
   await audit(staffId, 'SIGNED_IN', staffId);
-  return { staff, key: splitKey(key), admin: admin ? splitKey(admin) : undefined };
+  return { staff, key: splitKey(key), canAdmin: Boolean(staff.is_admin && staff.admin_key) };
+}
+
+/** Step-up authentication: unwraps the clinic admin root key only while Admin mode is unlocked. */
+export async function unlockAdmin(staffId: string, passcode: string): Promise<KeyPair | null> {
+  const staff = await get<Staff>('staff', staffId);
+  if (!staff || staff.disabled || !staff.is_admin || !staff.admin_key) return null;
+  const admin = await unwrapSecret(staff.admin_key, passcode);
+  if (!admin) {
+    await audit(staffId, 'ADMIN_UNLOCK_FAILED', staffId);
+    return null;
+  }
+  await audit(staffId, 'ADMIN_UNLOCKED', staffId);
+  return splitKey(admin);
+}
+
+/** Zeroes raw key bytes in memory when locking or leaving Admin mode. */
+export function wipeKey(k?: KeyPair | null) {
+  if (!k) return;
+  k.priv.fill(0);
+  k.pub.fill(0);
+}
+
+export async function recordLockAudit(staffId: string, reason: 'manual' | 'idle') {
+  await audit(staffId, 'WORKSTATION_LOCKED', staffId, reason);
 }
 
 // ---------- patients ----------
